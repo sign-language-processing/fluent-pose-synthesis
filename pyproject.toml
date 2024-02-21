@@ -1,0 +1,40 @@
+[project]
+name = "fluent-pose-synthesis"
+description = "This project aims to make unfluent sign language poses fluent"
+version = "0.0.1"
+authors = [
+    { name = "Amit Moryossef", email = "amitmoryossef@gmail.com" },
+]
+readme = "README.md"
+dependencies = [
+    "pose-format",
+]
+
+dev = [
+    "pytest",
+    "pylint"
+]
+
+[tool.yapf]
+based_on_style = "google"
+column_limit = 120
+
+[tool.pylint]
+max-line-length = 120
+disable = [
+    "C0114", # Missing module docstring
+    "C0115", # Missing class docstring
+    "C0116", # Missing function or method docstring
+]
+
+[tool.setuptools]
+packages = [
+    "fluent_pose_synthesis"
+]
+
+[tool.pytest.ini_options]
+addopts = "-v"
+testpaths = ["fluent_pose_synthesis"]
+
+[project.scripts]
+fluent_pose_synthesis = "fluent_pose_synthesis.bin:main"
