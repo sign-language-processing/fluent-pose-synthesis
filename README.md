@@ -36,10 +36,10 @@ Or using [Ham2Pose](https://rotem-shalev.github.io/ham-to-pose/), each HamNoSys 
 | HOME1A     |                                                                          | [<img src='assets/example/HOUSE1A^.gif' alt="HOUSE1A^" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13958_en.html)                    |
 
 
-<table style="width:100%;">
+<table>
   <tr>
-    <th style="width:50%;">When performed in this way, the pose sequence is not fluent</th>
-    <th style="width:50%;">This project aims to make the pose sequence more natural</th>
+    <th width="50%">When performed in this way, the pose sequence is not fluent</th>
+    <th width="50%">This project aims to make the pose sequence more natural</th>
   </tr>
   <tr>
     <td><img src='assets/example/poses/stitched.gif' alt="Stitched Pose Sequence" style="width:100%;"></td>
