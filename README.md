@@ -19,7 +19,11 @@ fluent_pose_synthesis --input="unfluent.pose" --output="fluent.pose"
 
 Somehow, a pose sequence was generated form sign language videos.
 
-For example, there was a machine translation system, that
+For example, here is a video of a sign language sentence:
+
+[<img src='assets/example/sentence.gif' alt="We were expecting something simple, like a youth hostel.">](https://www.sign-lang.uni-hamburg.de/meinedgs/html/1248862_en.html#t00012332)
+
+Given a system that
 given `We were expecting something simple, like a youth hostel.`
 Translated to the glosses `DIFFERENT1 IMAGINATION1A LIKE3B* EASY1 YOUNG1* HOME1A`.
 Then, using [spoken-to-signed-translation](https://github.com/ZurichNLP/spoken-to-signed-translation),
@@ -43,7 +47,7 @@ Or using [Ham2Pose](https://rotem-shalev.github.io/ham-to-pose/), each HamNoSys 
   </tr>
   <tr>
     <td><img src='assets/example/poses/stitched.gif' alt="Stitched Pose Sequence" style="width:100%;"></td>
-    <td><a href="https://www.sign-lang.uni-hamburg.de/meinedgs/html/1248862_en.html#t00012332"><img src='assets/example/sentence.gif' alt="We were expecting something simple, like a youth hostel." style="width:100%;"></a></td>
+    <td><img src='assets/example/pose.gif' alt="Reference Pose Sequence" style="width:100%;"></td>
   </tr>
 </table>
 
