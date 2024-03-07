@@ -10,6 +10,7 @@ dependencies = [
     "pose-format",
 ]
 
+[project.optional-dependencies]
 dev = [
     "pytest",
     "pylint"
