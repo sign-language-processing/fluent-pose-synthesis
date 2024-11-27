@@ -1,3 +1,5 @@
 .idea/
 build/
 fluent_pose_synthesis.egg-info/
+.DS_Store
+
