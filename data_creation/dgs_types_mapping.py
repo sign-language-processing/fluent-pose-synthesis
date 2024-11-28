@@ -15,7 +15,7 @@ def create_gloss_to_pose_dict(dgs_types_dataset):
         pose = datum['views']['pose'].numpy().tolist()
         pose = pose[0] if pose else None
                 
-        # Keep complete original data
+        # Keep complete original data_entry
         original_data = {k: v for k, v in datum.items()}
         
         # Add pose for each gloss
