@@ -21,7 +21,7 @@ from spoken_to_signed.gloss_to_pose import concatenate_poses
 
 from map_gloss_to_pose import create_gloss_to_pose_dict
 
-# example call:
+# Example call:
 # python create_data.py --corpus_dir /scratch/ronli --dictionary_dir /scratch/ronli --output_dir /scratch/ronli/output --max_examples 6
 
 
