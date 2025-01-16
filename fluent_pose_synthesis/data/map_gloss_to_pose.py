@@ -1,7 +1,11 @@
-import tensorflow_datasets as tfds
+from typing import Dict, List, Tuple, Any
+import tensorflow as tf
 
 
-def create_gloss_to_pose_dict(dgs_types_dataset):
+def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """
+    Generate a mapping of glosses to their corresponding pose data from DGS Types dataset.
+    """
     gloss_to_pose_dict = {}
     gloss_pose_conflicts = {}
     
@@ -15,7 +19,7 @@ def create_gloss_to_pose_dict(dgs_types_dataset):
         pose = datum['views']['pose'].numpy().tolist()
         pose = pose[0] if pose else None
                 
-        # Keep complete original data_entry
+        # Keep complete original data
         original_data = {k: v for k, v in datum.items()}
         
         # Add pose for each gloss
