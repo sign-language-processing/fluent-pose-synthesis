@@ -201,6 +201,11 @@ class DGSPoseDataset:
                 updated_pose = original_pose
             updated_poses_sequence.append(updated_pose)
 
+        # Ensure non-empty pose sequences
+        if not original_poses_sequence or not updated_poses_sequence:
+            logging.warning(f"Skipping sentence {metadata['id']} due to empty pose sequences.")
+            return None
+        
         # Concatenate poses
         concatenated_original_pose = concatenate_poses(original_poses_sequence)
         concatenated_updated_pose = concatenate_poses(updated_poses_sequence)
@@ -235,6 +240,8 @@ class DGSPoseDataset:
                     break
                 # Process each sentence entry
                 processed_sentence = self._process_sentence(data_entry)
+                if processed_sentence is None:
+                    continue
                 # Update counters
                 total_signs += processed_sentence.valid_gloss_count
                 replaced_signs += processed_sentence.replaced_gloss_count
@@ -269,6 +276,10 @@ def setup_logging(output_dir: Path, log_filename: str="processing.log") -> Path:
     file_handler = logging.FileHandler(log_file_path)
     file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(console_handler)
     
     return log_file_path
 
