@@ -2,7 +2,11 @@ from typing import Dict, List, Tuple, Any
 import tensorflow as tf
 
 
-def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+# Define types
+PoseDict = Dict[str, Dict[str, Any]]
+ConflictDict = Dict[str, List[Dict[str, Any]]]
+
+def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[PoseDict, ConflictDict]:
     """
     Generate a mapping of glosses to their corresponding pose data from DGS Types dataset.
     """
@@ -14,11 +18,17 @@ def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[Dict[
         glosses = datum['glosses'].numpy().tolist()
         datum_id = datum['id'].numpy().decode('utf-8')
         is_galex = datum_id.startswith('galex_')
-        
-        # Get pose (if exists)
-        pose = datum['views']['pose'].numpy().tolist()
-        pose = pose[0] if pose else None
-                
+        # Get pose and view names
+        view_names = datum['views']['name'].numpy().tolist()
+        poses = datum['views']['pose'].numpy().tolist()
+        if len(poses) == 0:
+            pose = None
+        elif len(poses) == 1:
+            pose = poses[0] # Use the only pose available (which is front)
+        else:
+            frontal_index = view_names.index(b'frontal')  # Get the frontal view index
+            pose = poses[frontal_index] # Use the frontal view pose
+
         # Keep complete original data
         original_data = {k: v for k, v in datum.items()}
         
@@ -33,16 +43,13 @@ def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[Dict[
                 existing_id = gloss_to_pose_dict[gloss]['id'].numpy().decode('utf-8')
                 existing_is_galex = existing_id.startswith('galex_')
                 
-                # If existing pose is None, update with new pose
+                # Case 1: If existing pose is None, update with new pose
                 if existing_pose is None and pose is not None:
-                    gloss_to_pose_dict[gloss]['views']['pose'] = pose
-                    continue
-                    
-                # If new pose is None, keep existing pose
+                    gloss_to_pose_dict[gloss]['views']['pose'] = pose                   
+                # Case 2: If new pose is None, keep existing pose
                 elif pose is None:
-                    continue
-                
-                # If both poses exist and are different
+                    pass
+                # Case 3: If both poses exist and are different
                 elif pose != existing_pose:
                     # Record conflict for debugging
                     if gloss not in gloss_pose_conflicts:
@@ -51,23 +58,21 @@ def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[Dict[
                         'pose': pose,
                         'id': datum_id,
                         'type': 'Galex' if is_galex else 'DGS Types'
-                    })
-                                        
-                    # If existing entry is from Galex and new one is from DGS Types
+                    })                                      
+                    # Replace if existing entry is from Galex and new one is from DGS Types
+                    # Otherwise (both are from the same source or new one is from Galex), keep the existing entry
                     if existing_is_galex and not is_galex:
                         gloss_to_pose_dict[gloss] = {
                             **original_data,
                             'views': {**original_data['views'], 'pose': pose}
                         }
-                    # # If both are from same source or new one is from Galex, keep existing
-                    continue
-            
-            # Create new entry
-            gloss_to_pose_dict[gloss] = {
-                **original_data,
-                'views': {**original_data['views'], 'pose': pose}
-            }
-    
+            # Create new entry if gloss doesn't exist
+            else:
+                gloss_to_pose_dict[gloss] = {
+                    **original_data,
+                    'views': {**original_data['views'], 'pose': pose}
+                }
+
     # # Print conflicts summary
     # print("\n--- Gloss-Pose Conflicts Summary ---")
     # for gloss, conflicts in gloss_pose_conflicts.items():

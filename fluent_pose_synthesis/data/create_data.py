@@ -1,5 +1,6 @@
 import os
 import math
+import json
 import logging
 import argparse
 import importlib
@@ -266,6 +267,35 @@ def save_pose_to_file(pose_object: Pose, file_path: Path):
         pose_object.write(file)
 
 
+def convert_numpy_types(obj):
+    """
+    Recursively converts numpy types to standard Python types.
+    """
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(v) for v in obj]
+    return obj
+
+
+def save_metadata_to_file(metadata: Dict[str, Any], file_path: Path):
+    """
+    Saves metadata to a JSON file.
+    Args:
+        metadata (Dict[str, Any]): The metadata dictionary to save.
+        file_path (Path): The file path to save the metadata.
+    """
+    metadata = convert_numpy_types(metadata)
+    with open(file_path, "w", encoding="utf-8") as file:
+        json.dump(metadata, file, indent=4, ensure_ascii=False)
+
+
 def setup_logging(output_dir: Path, log_filename: str="processing.log") -> Path:
     """Setup logging configuration."""
     log_file_path = Path(output_dir) / log_filename
@@ -320,11 +350,15 @@ def main():
             # Save updated pose
             updated_pose_path = split_output_path / f"{split}_{idx + 1}_updated.pose"
             save_pose_to_file(processed_sentence.concatenated_updated_pose, updated_pose_path)
+            # Save metadata
+            metadata_path = split_output_path / f"{split}_{idx + 1}_metadata.json"
+            save_metadata_to_file(processed_sentence.metadata, metadata_path)
             
             # Log processing information
             logging.info(f"Processed sentence {idx + 1}: {processed_sentence.metadata['id']}")
             logging.info(f"Original pose saved to: {original_pose_path}")
             logging.info(f"Updated pose saved to: {updated_pose_path}")
+            logging.info(f"Metadata saved to: {metadata_path}")
             valid_gloss_count = processed_sentence.valid_gloss_count
             replaced_gloss_count = processed_sentence.replaced_gloss_count
             logging.info(f"Valid gloss count: {valid_gloss_count}")
