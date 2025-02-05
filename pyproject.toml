@@ -8,6 +8,7 @@ authors = [
 readme = "README.md"
 dependencies = [
     "pose-format",
+    "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation"
 ]
 
 [project.optional-dependencies]
