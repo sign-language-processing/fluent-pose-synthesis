@@ -18,17 +18,10 @@ def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset) -> Tuple[PoseD
         glosses = datum['glosses'].numpy().tolist()
         datum_id = datum['id'].numpy().decode('utf-8')
         is_galex = datum_id.startswith('galex_')
-        # Get pose and view names
-        view_names = datum['views']['name'].numpy().tolist()
+        # Get pose
         poses = datum['views']['pose'].numpy().tolist()
-        if len(poses) == 0:
-            pose = None
-        elif len(poses) == 1:
-            pose = poses[0] # Use the only pose available (which is front)
-        else:
-            frontal_index = view_names.index(b'frontal')  # Get the frontal view index
-            pose = poses[frontal_index] # Use the frontal view pose
-
+        # Use the first available pose, which is the frontal angle
+        pose = poses[0] if poses else None
         # Keep complete original data
         original_data = {k: v for k, v in datum.items()}
         

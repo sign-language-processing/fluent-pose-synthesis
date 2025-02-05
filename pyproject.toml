@@ -8,6 +8,7 @@ authors = [
 readme = "README.md"
 dependencies = [
     "pose-format",
+    "spoken_to_signed"
 ]
 
 [project.optional-dependencies]
