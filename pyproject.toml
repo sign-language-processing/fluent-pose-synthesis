@@ -8,7 +8,7 @@ authors = [
 readme = "README.md"
 dependencies = [
     "pose-format",
-    "spoken_to_signed"
+    { git = "https://github.com/ZurichNLP/spoken-to-signed-translation.git" }
 ]
 
 [project.optional-dependencies]
