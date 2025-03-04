@@ -4,17 +4,15 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Union, Tuple
 
-sys.path.append('./')
-
-import numpy as np
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 
 
 class SignLanguagePoseDataset(Dataset):
-    def __init__(self, data_dir: Path, split: str, fluent_frames: int, dtype=np.float32, limited_num: int = -1):
+    def __init__(self, data_dir: Path, split: str, fluent_frames: int, dtype=np.float32, limited_num: int=-1):
         """
         Args:
             data_dir (Path): Root directory where the data is saved. Each split should be in its own subdirectory.
@@ -75,40 +73,29 @@ class SignLanguagePoseDataset(Dataset):
         disfluent_seq = disfluent_pose.body.data.astype(self.dtype)
         disfluent_mask = disfluent_pose.body.mask
         
-        # For fluent target, select a random window of length fluent_frames
-        fluent_length = len(fluent_pose.body.data)
-        if fluent_length < self.fluent_frames:
-            # Return None to indicate an invalid sample
-            return None
-
-        # Dynamic windowing: Randomly select a window of length fluent_frames
-        start = np.random.randint(0, fluent_length - self.fluent_frames + 1)
-        fluent_clip = fluent_pose.body.data[start: start + self.fluent_frames].astype(self.dtype)
-        fluent_mask = fluent_pose.body.mask[start: start + self.fluent_frames]
+        fluent_data = fluent_pose.body.data.astype(self.dtype)
+        fluent_mask_full = fluent_pose.body.mask
+        fluent_length = len(fluent_data)
         
+        if fluent_length > self.fluent_frames:
+            # Dynamic windowing: randomly select a window of length fluent_frames
+            start = np.random.randint(0, fluent_length - self.fluent_frames + 1)
+            fluent_clip = fluent_data[start: start + self.fluent_frames]
+            fluent_mask = fluent_mask_full[start: start + self.fluent_frames]
+        else:
+            # If the fluent sequence is shorter than fluent_frames, zero_pad_collator will handle it
+            fluent_clip = fluent_data
+            fluent_mask = fluent_mask_full
+
         return {
             'data': torch.tensor(fluent_clip, dtype=torch.float32),
             'conditions': {
                 'input_sequence': torch.tensor(disfluent_seq, dtype=torch.float32),   # entire disfluent sequence
-                'input_mask': torch.tensor(disfluent_mask, dtype=torch.bool),     # mask for the disfluent sequence
-                'target_mask': torch.tensor(fluent_mask, dtype=torch.bool),               # mask for the fluent clip
+                'input_mask': torch.tensor(disfluent_mask, dtype=torch.bool),           # mask for the disfluent sequence
+                'target_mask': torch.tensor(fluent_mask, dtype=torch.bool),             # mask for the fluent clip
                 'metadata': metadata
             }
         }
-
-
-def filtering_collator(batch) -> Union[Dict[str, torch.Tensor], Tuple[torch.Tensor, ...]]:
-    """
-    Custom collator function to filter out invalid samples from the batch.
-    Args:
-        batch: List of samples to collate.
-    """
-    # Filter out invalid samples (i.e., those that are None)
-    filtered_batch = [b for b in batch if b is not None]
-    if len(filtered_batch) == 0:
-        raise ValueError("All samples in the batch are invalid")
-    
-    return zero_pad_collator(filtered_batch)
 
 
 def example_dataset():
@@ -123,7 +110,7 @@ def example_dataset():
         limited_num=1000
     )
     
-    # Create a DataLoader using the filtering_collator
+    # Create a DataLoader using zero-padding collator
     dataloader = torch.utils.data.DataLoader(
         dataset, 
         batch_size=128, 
@@ -131,7 +118,7 @@ def example_dataset():
         num_workers=0, 
         drop_last=False, 
         pin_memory=True,
-        collate_fn=filtering_collator
+        collate_fn=zero_pad_collator
     )
 
     # Flag to indicate whether to display batch information
