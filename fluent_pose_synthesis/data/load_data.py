@@ -1,8 +1,7 @@
-import sys
 import time
 import json
 from pathlib import Path
-from typing import Any, Dict, Union, Tuple
+from typing import Any, Dict
 
 import torch
 import numpy as np
