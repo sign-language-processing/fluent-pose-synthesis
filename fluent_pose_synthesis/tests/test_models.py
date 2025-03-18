@@ -14,7 +14,7 @@ def get_dummy_batch(batch_size=2, seq_len=50, keypoints=178, dims=3):
     data = torch.ones(batch_size, seq_len, 1, keypoints, dims)
     conditions = {"input_sequence": torch.ones(batch_size, seq_len, 1, keypoints, dims)}
     t = torch.zeros(batch_size, dtype=torch.long)
-    
+
     return data, conditions, t
 
 
@@ -40,14 +40,14 @@ def test_base_output_shape(arch, seq_len, batch_size):
     ).to(device)
 
     fluent_clip, conditions, t = get_dummy_batch(batch_size=batch_size, seq_len=seq_len)
-    
+
     # Move tensors to device
     fluent_clip = fluent_clip.to(device)
     disfluent_seq = conditions["input_sequence"].to(device)
     t = t.to(device)
 
     output = model(fluent_clip, disfluent_seq, t)
-    
+
     assert output.shape == (batch_size, seq_len, 178, 3), f"Arch {arch} output shape mismatch: {output.shape}"
     assert torch.isfinite(output).all(), f"Arch {arch} output contains NaN or Inf values"
     assert output.sum() != 0, f"Arch {arch} output is entirely zero"
