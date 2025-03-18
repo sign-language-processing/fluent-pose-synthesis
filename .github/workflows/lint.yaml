@@ -1,12 +1,10 @@
 name: Lint
 
-
 on:
   push:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
-
 
 jobs:
   test:
@@ -20,7 +18,9 @@ jobs:
           python-version: '3.10'
 
       - name: Install Requirements
-        run: pip install .[dev]
+        run: |
+          pip install .[dev]
+          pip install torch
 
       - name: Lint Code
         run: pylint fluent_pose_synthesis
