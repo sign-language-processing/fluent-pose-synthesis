@@ -22,7 +22,7 @@ def get_dummy_batch(batch_size=2, seq_len=50, keypoints=178, dims=3):
 @pytest.mark.parametrize("seq_len", [50, 100])
 @pytest.mark.parametrize("batch_size", [2, 4, 16])
 def test_base_output_shape(arch, seq_len, batch_size):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     model = SignLanguagePoseDiffusion(
         input_feats=534,
@@ -30,8 +30,8 @@ def test_base_output_shape(arch, seq_len, batch_size):
         keypoints=178,
         dims=3,
         latent_dim=256,
-        ff_size=1024,
-        num_layers=8,
+        ff_size=256,
+        num_layers=2,
         num_heads=4,
         dropout=0.2,
         arch=arch,
@@ -49,6 +49,8 @@ def test_base_output_shape(arch, seq_len, batch_size):
     output = model(fluent_clip, disfluent_seq, t)
     
     assert output.shape == (batch_size, seq_len, 178, 3), f"Arch {arch} output shape mismatch: {output.shape}"
+    assert torch.isfinite(output).all(), f"Arch {arch} output contains NaN or Inf values"
+    assert output.sum() != 0, f"Arch {arch} output is entirely zero"
 
 
 if __name__ == "__main__":
