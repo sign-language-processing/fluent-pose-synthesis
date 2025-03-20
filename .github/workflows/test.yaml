@@ -22,5 +22,11 @@ jobs:
       - name: Install Requirements
         run: pip install .[dev]
 
+      - name: Set up PYTHONPATH
+        run: echo "PYTHONPATH=$(pwd)" >> $GITHUB_ENV
+
+      - name: Debug Python Path
+        run: python -c "import sys; print('PYTHONPATH:', sys.path)"
+
       - name: Test Code
         run: pytest fluent_pose_synthesis
