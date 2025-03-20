@@ -15,12 +15,25 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Initialize Git submodules
+        run: git submodule update --init --recursive
+          
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install Requirements
         run: pip install .[dev]
+
+      - name: Add CAMDM to PYTHONPATH
+        run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd)/CAMDM/PyTorch" >> $GITHUB_ENV
+        
+      - name: Debug Python Path
+        run: python -c "import sys; print('PYTHONPATH:', sys.path)"
 
       - name: Test Code
         run: pytest fluent_pose_synthesis
