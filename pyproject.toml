@@ -10,7 +10,8 @@ dependencies = [
     "pose-format",
     "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
     "torch",
-    "matplotlib"
+    "matplotlib",
+    "blobfile"
 ]
 
 [project.optional-dependencies]

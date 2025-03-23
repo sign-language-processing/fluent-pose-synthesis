@@ -73,7 +73,7 @@ def train(config: argparse.Namespace, resume: Optional[str], logger: Logger, tb_
         ff_size=config.arch.ff_size,
         num_layers=config.arch.num_layers,
         num_heads=config.arch.num_heads,
-        dropout=getattr(config.arch, "dropout", 0.2), 
+        dropout=getattr(config.arch, "dropout", 0.2),
         ablation=getattr(config.arch, "ablation", None),
         activation=getattr(config.arch, "activation", "gelu"),
         legacy=getattr(config.arch, "legacy", False),
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--resume', default=None, type=str, help='Path to latest checkpoint')
     parser.add_argument('-s', '--save', default='./save', type=str, help='Directory to save model and logs')
     parser.add_argument('--cluster', action='store_true', help='Enable cluster mode')
-    
+
     add_model_args(parser)
     add_diffusion_args(parser)
     add_train_args(parser)
@@ -157,8 +157,8 @@ if __name__ == '__main__':
     # Save the config for reference
     with open('%s/config.json' % config.save, 'w') as f:
         f.write(str(config))
-        f.close() 
-    
+        f.close()
+
     logger.info('\nLaunching training with config:\n%s' % config)
     train(config, args.resume, logger, tb_writer)
     logger.info('\nTotal training time: %.2f mins' % ((time.time() - start_time) / 60))
