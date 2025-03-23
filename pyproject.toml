@@ -9,7 +9,7 @@ readme = "README.md"
 dependencies = [
     "numpy==1.24.4",
     "pose-format",
-    "tensorflow-datasets==4.9.2",
+    "tensorflow-datasets==4.9.0",
     "sign-language-datasets",
     "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
     "torch",
