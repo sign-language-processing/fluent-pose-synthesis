@@ -11,7 +11,8 @@ dependencies = [
     "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
     "torch",
     "matplotlib",
-    "blobfile"
+    "blobfile",
+    "torch_ema"
 ]
 
 [project.optional-dependencies]
