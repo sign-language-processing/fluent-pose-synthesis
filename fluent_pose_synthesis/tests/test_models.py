@@ -2,7 +2,7 @@ import os
 import sys
 import torch
 import pytest
-from fluent_pose_synthesis.network.models import SignLanguagePoseDiffusion
+from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
