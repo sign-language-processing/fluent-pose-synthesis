@@ -1,7 +1,10 @@
 import os
+import sys
 import torch
 import pytest
 from fluent_pose_synthesis.network.models import SignLanguagePoseDiffusion
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 
 def get_dummy_batch(batch_size=2, seq_len=50, keypoints=178, dims=3):
