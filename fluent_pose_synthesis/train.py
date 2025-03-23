@@ -100,7 +100,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='### Fluent Sign Language Pose Synthesis Training ###')
 
     parser.add_argument('-n', '--name', default='debug', type=str, help='The name of this training run')
-    parser.add_argument('-c', '--config', default='./fluent_pose_synthesis/config/default.json', type=str, help='Path to config file')
+    parser.add_argument('-c', '--config', default='./fluent_pose_synthesis/config/default.json', 
+                        type=str, help='Path to config file')
     parser.add_argument('-i', '--data', default='/scratch/ronli/output', type=str, help='Path to dataset folder')
     parser.add_argument('-r', '--resume', default=None, type=str, help='Path to latest checkpoint')
     parser.add_argument('-s', '--save', default='./save', type=str, help='Directory to save model and logs')

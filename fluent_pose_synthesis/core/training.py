@@ -44,14 +44,15 @@ class PoseTrainingPortal(BaseTrainingPortal):
             logger: Logger instance (optional).
             tb_writer: TensorBoard writer (optional).
             finetune_loader: Optional finetuning dataloader.
-        """        
+        """  
         super().__init__(config, model, diffusion, dataloader, logger, tb_writer, finetune_loader)
 
         dataset_module = importlib.import_module("sign_language_datasets.datasets.dgs_corpus.dgs_corpus")
         with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
             self.pose_header = PoseHeader.read(BufferReader(buffer.read()))
 
-    def diffuse(self, fluent_clip: Tensor, t: Tensor, cond: Dict[str, Tensor], noise: Optional[Tensor] = None, return_loss: bool = False) -> Tuple[Tensor, Dict[str, Tensor]]: 
+    def diffuse(self, fluent_clip: Tensor, t: Tensor, cond: Dict[str, Tensor], 
+                noise: Optional[Tensor] = None, return_loss: bool = False) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Perform diffusion on the input fluent_clip tensor, and return the model output.
         Args:
@@ -70,9 +71,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
             # # Print debug info about the input tensors
             # print("=== Debug: Fluent Clip Info ===")
-            # print("x_start shape:", x_start.shape, 
+            # print("x_start shape:", x_start.shape,
             #       "mean:", x_start.mean().item(), "std:", x_start.std().item())
-            # print("x_t shape:", x_t.shape, 
+            # print("x_t shape:", x_t.shape,
             #       "mean:", x_t.mean().item(), "std:", x_t.std().item())
 
             x_start_perm = x_start.permute(0, 2, 3, 1)  # (B, K, 3, T)
@@ -101,7 +102,8 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 print("vb loss:", loss_terms["vb"].mean().item())
 
             target = {
-                ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(x_start=x_start_perm, x_t=x_t_perm, t=t)[0],
+                ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(x_start=x_start_perm, 
+                                                                                   x_t=x_t_perm, t=t)[0],
                 ModelMeanType.START_X: x_start_perm,
                 ModelMeanType.EPSILON: noise,
             }[self.diffusion.model_mean_type]
@@ -151,7 +153,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
         else:
             with torch.no_grad():
                 model_output = self.model.interface(fluent_clip, t, cond)
-            
+
             return model_output.unsqueeze(2)  # (B, T, 1, K, 3)
 
     def evaluate_sampling(self, dataloader: DataLoader, save_folder_name: str = 'init_samples'):
@@ -172,7 +174,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             collate_fn=zero_pad_collator,
             pin_memory=True
         )
-        
+
         datas = next(iter(patched_dataloader))
         fluent_clip = datas['data'].to(self.device)  # fluent_clip shape: (B, T, 1, keypoints, 3)
         cond = {key: (val.to(self.device) if torch.is_tensor(val) else val)
