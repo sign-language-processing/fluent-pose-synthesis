@@ -30,10 +30,12 @@ jobs:
         run: pip install .[dev]
 
       - name: Set PYTHONPATH for project and CAMDM
-        run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd):$(pwd)/CAMDM/PyTorch" >> $GITHUB_ENV
+        run: echo "PYTHONPATH=$(pwd):$(pwd)/CAMDM/PyTorch:$PYTHONPATH" >> $GITHUB_ENV
        
       - name: Debug Python Path
         run: python -c "import sys; print('PYTHONPATH:', sys.path)"
 
       - name: Test Code
-        run: pytest fluent_pose_synthesis
+        run: |
+          export PYTHONPATH=$(pwd):$(pwd)/CAMDM/PyTorch:$PYTHONPATH
+          pytest fluent_pose_synthesis
