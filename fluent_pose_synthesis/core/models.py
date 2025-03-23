@@ -7,7 +7,8 @@ from typing import Optional, Callable
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
 # Add CAMDM directory to Python path
-sys.path.append(CAMDM_PATH)
+# sys.path.append(CAMDM_PATH)
+sys.path.insert(0, CAMDM_PATH)
 
 from network.models import PositionalEncoding, TimestepEmbedder, OutputProcess, MotionProcess
 

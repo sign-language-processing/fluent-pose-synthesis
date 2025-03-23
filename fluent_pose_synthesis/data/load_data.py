@@ -97,56 +97,56 @@ class SignLanguagePoseDataset(Dataset):
         }
 
 
-def example_dataset():
-    """
-    Example function to demonstrate the dataset class and its DataLoader.
-    """
-    # Create an instance of the dataset
-    dataset = SignLanguagePoseDataset(
-        data_dir=Path("/scratch/ronli/output"),
-        split="train",
-        fluent_frames=20,
-        limited_num=1000
-    )
+# def example_dataset():
+#     """
+#     Example function to demonstrate the dataset class and its DataLoader.
+#     """
+#     # Create an instance of the dataset
+#     dataset = SignLanguagePoseDataset(
+#         data_dir=Path("/scratch/ronli/output"),
+#         split="train",
+#         fluent_frames=20,
+#         limited_num=1000
+#     )
     
-    # Create a DataLoader using zero-padding collator
-    dataloader = torch.utils.data.DataLoader(
-        dataset, 
-        batch_size=128, 
-        shuffle=True, 
-        num_workers=0, 
-        drop_last=False, 
-        pin_memory=True,
-        collate_fn=zero_pad_collator
-    )
+#     # Create a DataLoader using zero-padding collator
+#     dataloader = torch.utils.data.DataLoader(
+#         dataset, 
+#         batch_size=128, 
+#         shuffle=True, 
+#         num_workers=0, 
+#         drop_last=False, 
+#         pin_memory=True,
+#         collate_fn=zero_pad_collator
+#     )
 
-    # Flag to indicate whether to display batch information
-    display_batch_info = True
-    # Flag to indicate whether to measure data loading time
-    measure_loading_time = True
+#     # Flag to indicate whether to display batch information
+#     display_batch_info = True
+#     # Flag to indicate whether to measure data loading time
+#     measure_loading_time = True
 
-    if display_batch_info:
-        # Display shapes of a batch for debugging purposes
-        batch = next(iter(dataloader))
-        print("Target clip shape:", batch['data'].shape)             # Fluent (target) clip shape
-        print("Input clip shape:", batch['conditions']['input_sequence'].shape)   # Disfluent (condition) sequence shape
-        print("Input mask shape:", batch['conditions']['input_mask'].shape)
-        print("Target mask shape:", batch['conditions']['target_mask'].shape)
-        # print("Metadata:", batch['conditions']['metadata'])
+#     if display_batch_info:
+#         # Display shapes of a batch for debugging purposes
+#         batch = next(iter(dataloader))
+#         print("Target clip shape:", batch['data'].shape)             # Fluent (target) clip shape
+#         print("Input clip shape:", batch['conditions']['input_sequence'].shape)   # Disfluent (condition) sequence shape
+#         print("Input mask shape:", batch['conditions']['input_mask'].shape)
+#         print("Target mask shape:", batch['conditions']['target_mask'].shape)
+#         # print("Metadata:", batch['conditions']['metadata'])
 
-    if measure_loading_time:
-        loading_times = []
-        start_time = time.time()
-        for batch in dataloader:
-            end_time = time.time()
-            batch_loading_time = end_time - start_time
-            print('Data loading time for each iteration: {:.4f}s'.format(batch_loading_time))
-            loading_times.append(batch_loading_time)
-            start_time = end_time
-        avg_loading_time = sum(loading_times) / len(loading_times)
-        print('Average data loading time: {:.4f}s'.format(avg_loading_time))
-        print('Total data loading time: {:.4f}s'.format(sum(loading_times)))
+#     if measure_loading_time:
+#         loading_times = []
+#         start_time = time.time()
+#         for batch in dataloader:
+#             end_time = time.time()
+#             batch_loading_time = end_time - start_time
+#             print('Data loading time for each iteration: {:.4f}s'.format(batch_loading_time))
+#             loading_times.append(batch_loading_time)
+#             start_time = end_time
+#         avg_loading_time = sum(loading_times) / len(loading_times)
+#         print('Average data loading time: {:.4f}s'.format(avg_loading_time))
+#         print('Total data loading time: {:.4f}s'.format(sum(loading_times)))
 
 
-if __name__ == '__main__':
-    example_dataset()
+# if __name__ == '__main__':
+#     example_dataset()
