@@ -29,9 +29,9 @@ jobs:
       - name: Install Requirements
         run: pip install .[dev]
 
-      - name: Add CAMDM to PYTHONPATH
-        run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd)/CAMDM/PyTorch" >> $GITHUB_ENV
-        
+      - name: Set PYTHONPATH for project and CAMDM
+        run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd):$(pwd)/CAMDM/PyTorch" >> $GITHUB_ENV
+       
       - name: Debug Python Path
         run: python -c "import sys; print('PYTHONPATH:', sys.path)"
 
