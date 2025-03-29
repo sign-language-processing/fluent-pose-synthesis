@@ -23,7 +23,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
         # Generate the beta schedule from the provided parameters
         betas = get_named_beta_schedule(**schedule_kwargs)
         self.collate_fn = dataloader.collate_fn
-        
+
         # Initialize the parent GaussianDiffusion class with appropriate parameters
         super().__init__(
             betas=betas,
@@ -42,14 +42,14 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             lambda_fc=kwargs.get("lambda_fc", 0.0),
             data_rep=kwargs.get("data_rep", "rot6d")
         )
-    
+
     def training_losses_pose(self, model: th.nn.Module, pose_target:th.Tensor, t: th.Tensor, config: Any, model_kwargs: Optional[Dict[str, Any]] = None, noise: Optional[th.Tensor] = None) -> Dict[str, th.Tensor]:
         """
-        Compute training losses for pose sequences using 3D coordinates. 
+        Compute training losses for pose sequences using 3D coordinates.
         This function diffuses the target pose, passes the noisy pose to the model, and computes losses based on:
          - Basic MSE loss (if config.trainer.use_loss_mse is True),
          - Direct 3D coordinate loss (if config.trainer.use_loss_3d is True),
-         - Velocity loss (if config.trainer.use_loss_vel is True).      
+         - Velocity loss (if config.trainer.use_loss_vel is True).
         Args:
             model (torch.nn.Module): The neural network used for denoising.
             pose_target (torch.Tensor): Ground truth pose sequence. Shape: (B, T, K, 3)
@@ -58,7 +58,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             model_kwargs (Optional[Dict[str, Any]]): Additional keyword arguments for the model. Should include 'mask' with shape (B, T, 1, K, 3), if used.
             noise (Optional[torch.Tensor]): Optional noise tensor. If None, generated internally.
         """
-        batch_size, num_frames, num_keypoints, num_dims = pose_target.shape 
+        batch_size, num_frames, num_keypoints, num_dims = pose_target.shape
 
         # Diffuse the target pose to obtain x_t
         pose_noisy = self.q_sample(pose_target, t, noise=noise)

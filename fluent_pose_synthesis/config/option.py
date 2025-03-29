@@ -24,7 +24,7 @@ def add_train_args(parser):
     parser.add_argument('--cond_mask_prob', type=float, default=0.15, help='Conditioning mask probability.')
     parser.add_argument('--workers', type=int, default=4, help='Data loader workers.')
     parser.add_argument('--ema', default=False, type=bool, help='Use Exponential Moving Average (EMA) for model parameters.')
-    
+
 
 def config_parse(args):
     config = copy.deepcopy(json.load(open(args.config), object_hook=lambda d: Namespace(**d)))

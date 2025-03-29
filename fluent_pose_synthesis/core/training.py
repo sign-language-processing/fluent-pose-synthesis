@@ -44,14 +44,14 @@ class PoseTrainingPortal(BaseTrainingPortal):
             logger: Logger instance (optional).
             tb_writer: TensorBoard writer (optional).
             finetune_loader: Optional finetuning dataloader.
-        """  
+        """
         super().__init__(config, model, diffusion, dataloader, logger, tb_writer, finetune_loader)
 
         dataset_module = importlib.import_module("sign_language_datasets.datasets.dgs_corpus.dgs_corpus")
         with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
             self.pose_header = PoseHeader.read(BufferReader(buffer.read()))
 
-    def diffuse(self, fluent_clip: Tensor, t: Tensor, cond: Dict[str, Tensor], 
+    def diffuse(self, fluent_clip: Tensor, t: Tensor, cond: Dict[str, Tensor],
                 noise: Optional[Tensor] = None, return_loss: bool = False) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Perform diffusion on the input fluent_clip tensor, and return the model output.
@@ -102,7 +102,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 print("vb loss:", loss_terms["vb"].mean().item())
 
             target = {
-                ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(x_start=x_start_perm, 
+                ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(x_start=x_start_perm,
                                                                                    x_t=x_t_perm, t=t)[0],
                 ModelMeanType.START_X: x_start_perm,
                 ModelMeanType.EPSILON: noise,

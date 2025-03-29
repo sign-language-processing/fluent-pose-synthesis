@@ -11,11 +11,12 @@ import matplotlib.pyplot as plt
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
 
+# Add submodule path for CAMDM
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
 sys.path.append(CAMDM_PATH)
 
-from diffusion.create_diffusion import create_gaussian_diffusion
+from diffusion.create_diffusion import create_gaussian_diffusion    # pylint: disable=wrong-import-position
 
 # Ensure root path is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
@@ -29,6 +30,8 @@ class DummyDataset(Dataset):
 
 
 def get_toy_batch(batch_size=2, seq_len=40, keypoints=178):
+    assert batch_size == 2, "get_toy_batch currently only supports batch_size=2"
+
     base_linear = torch.linspace(0, 1, seq_len * keypoints * 3).reshape(seq_len, 1, keypoints, 3)
     base_sine = torch.sin(torch.linspace(0, 4 * np.pi, seq_len)).unsqueeze(1).unsqueeze(2)  # [T, 1, 1]
     base_sine = base_sine.expand(seq_len, 1, keypoints).unsqueeze(-1)  # [T, 1, K, 1]
@@ -163,7 +166,7 @@ def test_overfit_toy_batch():
 
     for step in range(config.trainer.epoch):
         t, weights = trainer.schedule_sampler.sample(config.trainer.batch_size, config.device)
-        output, loss_dict = trainer.diffuse(
+        _, loss_dict = trainer.diffuse(
             batch["data"], t, batch["conditions"], return_loss=True
         )
         loss = (loss_dict["loss"] * weights).mean()

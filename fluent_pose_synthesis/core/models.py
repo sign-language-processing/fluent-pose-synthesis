@@ -135,7 +135,7 @@ class SignLanguagePoseDiffusion(nn.Module):
         self.device = device
 
         # Positional encoding
-        self.sequence_pos_encoder = BatchFirstWrapper(PositionalEncoding(d_model=latent_dim, dropout=dropout))   
+        self.sequence_pos_encoder = BatchFirstWrapper(PositionalEncoding(d_model=latent_dim, dropout=dropout))
         # Timestep embedder: expects input (B,) and returns (1, B, latent_dim); post_transform converts it to (B, 1, latent_dim)
         self.embed_timestep = BatchFirstWrapper(
             TimestepEmbedder(latent_dim, self.sequence_pos_encoder),
@@ -149,7 +149,7 @@ class SignLanguagePoseDiffusion(nn.Module):
             MotionProcess(input_feats, latent_dim),
             pre_transform=lambda x: x.permute(0, 2, 3, 1),
             post_transform=lambda x: x.transpose(0, 1)
-        )    
+        )
         # Disfluent encoder: encodes the disfluent sequence into a global context vector.
         self.disfluent_encoder = DisfluentContextEncoder(input_feats, latent_dim)
 
@@ -237,7 +237,7 @@ class SignLanguagePoseDiffusion(nn.Module):
 
     def interface(self, fluent_clip: torch.Tensor, t: torch.Tensor, y: dict) -> torch.Tensor:
         """
-        Interface for Classifier-Free Guidance (CFG).     
+        Interface for Classifier-Free Guidance (CFG).
         Args:
             fluent_clip (torch.Tensor): (B, L_target, people, keypoints, dims) target fluent clip.
             t (torch.Tensor): (B,) diffusion time steps.
