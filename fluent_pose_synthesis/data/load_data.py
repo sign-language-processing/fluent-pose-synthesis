@@ -16,7 +16,7 @@ class SignLanguagePoseDataset(Dataset):
         Args:
             data_dir (Path): Root directory where the data is saved. Each split should be in its own subdirectory.
             split (str): Dataset split name, including "train", "validation", and "test".
-            fluent_frames (int): Number of frames from the fluent (target) sequence (original pose sequence) to use as target.
+            fluent_frames (int): Frames numbers from the fluent (target) sequence to use as target.
             dtype: Data type for the arrays, default is np.float32.
             limited_num (int): Limit the number of samples to load; default -1 loads all samples.
         """
@@ -42,7 +42,7 @@ class SignLanguagePoseDataset(Dataset):
                 'disfluent_path': disfluent_file,
                 'metadata_path': metadata_file
             })
-        
+
         print(f"Dataset initialized with {len(self.examples)} samples. Split: {split}")
 
     def __len__(self) -> int:
@@ -67,15 +67,15 @@ class SignLanguagePoseDataset(Dataset):
             disfluent_pose = Pose.read(f.read())
         with open(sample['metadata_path'], 'r', encoding='utf-8') as f:
             metadata = json.load(f)
-        
+
         # Use the entire disfluent sequence as condition
         disfluent_seq = disfluent_pose.body.data.astype(self.dtype)
         disfluent_mask = disfluent_pose.body.mask
-        
+
         fluent_data = fluent_pose.body.data.astype(self.dtype)
         fluent_mask_full = fluent_pose.body.mask
         fluent_length = len(fluent_data)
-        
+
         if fluent_length > self.fluent_frames:
             # Dynamic windowing: randomly select a window of length fluent_frames
             start = np.random.randint(0, fluent_length - self.fluent_frames + 1)
@@ -90,8 +90,8 @@ class SignLanguagePoseDataset(Dataset):
             'data': torch.tensor(fluent_clip, dtype=torch.float32),
             'conditions': {
                 'input_sequence': torch.tensor(disfluent_seq, dtype=torch.float32),   # entire disfluent sequence
-                'input_mask': torch.tensor(disfluent_mask, dtype=torch.bool),           # mask for the disfluent sequence
-                'target_mask': torch.tensor(fluent_mask, dtype=torch.bool),             # mask for the fluent clip
+                'input_mask': torch.tensor(disfluent_mask, dtype=torch.bool),         # mask for the disfluent sequence
+                'target_mask': torch.tensor(fluent_mask, dtype=torch.bool),           # mask for the fluent clip
                 'metadata': metadata
             }
         }
@@ -108,14 +108,14 @@ def example_dataset():
         fluent_frames=20,
         limited_num=1000
     )
-    
+
     # Create a DataLoader using zero-padding collator
     dataloader = torch.utils.data.DataLoader(
-        dataset, 
-        batch_size=128, 
-        shuffle=True, 
-        num_workers=0, 
-        drop_last=False, 
+        dataset,
+        batch_size=128,
+        shuffle=True,
+        num_workers=0,
+        drop_last=False,
         pin_memory=True,
         collate_fn=zero_pad_collator
     )
@@ -128,8 +128,10 @@ def example_dataset():
     if display_batch_info:
         # Display shapes of a batch for debugging purposes
         batch = next(iter(dataloader))
-        print("Target clip shape:", batch['data'].shape)             # Fluent (target) clip shape
-        print("Input clip shape:", batch['conditions']['input_sequence'].shape)   # Disfluent (condition) sequence shape
+        # Fluent (target) clip shape
+        print("Target clip shape:", batch['data'].shape)
+        # Disfluent (condition) sequence shape
+        print("Input clip shape:", batch['conditions']['input_sequence'].shape)
         print("Input mask shape:", batch['conditions']['input_mask'].shape)
         print("Target mask shape:", batch['conditions']['target_mask'].shape)
         # print("Metadata:", batch['conditions']['metadata'])
@@ -148,5 +150,5 @@ def example_dataset():
         print('Total data loading time: {:.4f}s'.format(sum(loading_times)))
 
 
-if __name__ == '__main__':
-    example_dataset()
+# if __name__ == '__main__':
+#     example_dataset()

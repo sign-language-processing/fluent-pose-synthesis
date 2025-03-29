@@ -7,9 +7,15 @@ authors = [
 ]
 readme = "README.md"
 dependencies = [
+    "numpy==1.24.4",
     "pose-format",
+    "tensorflow-datasets==4.9.7",
+    "sign-language-datasets",
     "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
-    "torch"
+    "torch",
+    "matplotlib",
+    "blobfile",
+    "torch_ema"
 ]
 
 [project.optional-dependencies]
