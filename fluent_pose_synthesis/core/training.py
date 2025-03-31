@@ -17,9 +17,8 @@ from diffusion.gaussian_diffusion import *
 from network.training import BaseTrainingPortal
 import utils.common as common
 
-from pose_format import Pose, PoseHeader
+from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
-from pose_format.utils.reader import BufferReader
 from pose_format.numpy.pose_body import NumPyPoseBody
 
 
@@ -46,10 +45,29 @@ class PoseTrainingPortal(BaseTrainingPortal):
             finetune_loader: Optional finetuning dataloader.
         """
         super().__init__(config, model, diffusion, dataloader, logger, tb_writer, finetune_loader)
+        self.pose_header = None
 
-        dataset_module = importlib.import_module("sign_language_datasets.datasets.dgs_corpus.dgs_corpus")
-        with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
-            self.pose_header = PoseHeader.read(BufferReader(buffer.read()))
+    def normalize_tensor(self, tensor: Tensor) -> Tuple[Tensor, list[Tuple[float, float]]]:
+        B = tensor.shape[0]
+        normed = []
+        stats = []
+        for i in range(B):
+            x = tensor[i]
+            min_val = x.amin()
+            max_val = x.amax()
+            normed.append((x - min_val) / (max_val - min_val + 1e-8))
+            stats.append((min_val, max_val))
+        return torch.stack(normed), stats
+
+    def denormalize_tensor(self, tensor: Tensor, stats: list[Tuple[float, float]]) -> Tensor:
+        B = tensor.shape[0]
+        denormed = []
+        for i in range(B):
+            min_val, max_val = stats[i]
+            x = tensor[i]
+            x_denormed = x * (max_val - min_val + 1e-8) + min_val
+            denormed.append(x_denormed)
+        return torch.stack(denormed)
 
     def diffuse(self, fluent_clip: Tensor, t: Tensor, cond: Dict[str, Tensor],
                 noise: Optional[Tensor] = None, return_loss: bool = False) -> Tuple[Tensor, Dict[str, Tensor]]:
@@ -68,13 +86,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
             if noise is None:
                 noise = torch.randn_like(x_start)
             x_t = self.diffusion.q_sample(x_start, t, noise=noise)
-
-            # # Print debug info about the input tensors
-            # print("=== Debug: Fluent Clip Info ===")
-            # print("x_start shape:", x_start.shape,
-            #       "mean:", x_start.mean().item(), "std:", x_start.std().item())
-            # print("x_t shape:", x_t.shape,
-            #       "mean:", x_t.mean().item(), "std:", x_t.std().item())
 
             x_start_perm = x_start.permute(0, 2, 3, 1)  # (B, K, 3, T)
             x_t_perm = x_t.permute(0, 2, 3, 1)
@@ -111,8 +122,12 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # Ensure shapes match
             assert model_output_perm.shape == target.shape == x_start_perm.shape, "Target shape mismatch"
 
-            # Convert mask: cond['target_mask'] (B, T, 1, keypoints, 3) -> (B, K, 3, T)
-            mask = cond['target_mask'].squeeze(2).permute(0, 2, 3, 1)
+            # cond['target_mask']: shape [B, T]
+            frame_mask = cond['target_mask']  # [B, T]
+            # Get K and 3 from model_output_perm: shape [B, K, 3, T]
+            B, K, C, T = model_output_perm.shape
+            # Expand frame_mask to [B, 1, 1, T] → then broadcast to [B, K, 3, T]
+            mask = frame_mask[:, None, None, :].expand(B, K, C, T)
 
             if self.config.trainer.use_loss_mse:
                 loss_terms['loss_data'] = self.diffusion.masked_l2(target, model_output_perm, mask)
@@ -127,7 +142,8 @@ class PoseTrainingPortal(BaseTrainingPortal):
             if self.config.trainer.use_loss_3d:
                 target_rot = target.permute(0, 3, 1, 2)  # (B, T, K, 3)
                 pred_rot = model_output_perm.permute(0, 3, 1, 2)  # (B, T, K, 3)
-                mask_rot = cond['target_mask'].squeeze(2)  # (B, T, K, 3)
+                frame_mask = cond['target_mask']  # shape: [B, T]
+                mask_rot = frame_mask[:, :, None, None].expand(-1, -1, self.config.arch.keypoints, self.config.arch.dims)  # [B, T, K, 3]
 
                 loss_terms["loss_geo_xyz"] = self.diffusion.masked_l2(target_rot, pred_rot, mask_rot)
 
@@ -175,32 +191,62 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pin_memory=True
         )
 
+        # Get a single batch of data and the header
         datas = next(iter(patched_dataloader))
-        fluent_clip = datas['data'].to(self.device)  # fluent_clip shape: (B, T, 1, keypoints, 3)
+        dataset = patched_dataloader.dataset
+        self.pose_header = dataset.pose_header
+
+        # Use the original Ground Truth data (unnormalized)
+        fluent_clip = datas["original_data"].to(self.device)
+
         cond = {key: (val.to(self.device) if torch.is_tensor(val) else val)
-                for key, val in datas['conditions'].items()}
+                for key, val in datas["conditions"].items()}
+
+        # Predict the output using the model
         t, _ = self.schedule_sampler.sample(patched_dataloader.batch_size, self.device)
         with torch.no_grad():
-            model_output = self.diffuse(fluent_clip, t, cond, noise=None, return_loss=False)
-        self.export_samples(fluent_clip, f'{self.save_dir}/{save_folder_name}', 'gt')
-        self.export_samples(model_output, f'{self.save_dir}/{save_folder_name}', 'pred')
-        self.logger.info(f'Evaluate sampling {save_folder_name} at epoch {self.epoch}')
+            pred_output = self.diffuse(fluent_clip, t, cond, noise=None, return_loss=False)
+
+        # Denormalize the output
+        if "stats" in datas:
+            stats_list = datas["stats"]
+            if isinstance(stats_list, tuple):
+                stats_list = [stats_list] * fluent_clip.shape[0]
+            pred_output = self.denormalize_tensor(pred_output, stats_list)
+        else:
+            print("[WARNING] No normalization stats found in batch — skipping denormalization")
+
+        self.export_samples(fluent_clip, f"{self.save_dir}/{save_folder_name}", "gt")
+        self.export_samples(pred_output, f"{self.save_dir}/{save_folder_name}", "pred")
+
+        self.logger.info(f"Evaluate sampling {save_folder_name} at epoch {self.epoch}")
 
     def export_samples(self, pose_output: Tensor, save_path: str, prefix: str):
         """
-        Export pose sequences to disk in .pose format.
+        Export pose sequences to disk in .pose format, with velocity-based confidence scores.
         Args:
             pose_output: A tensor of shape (B, T, 1, K, 3) or (B, T, K, 3).
             save_path: Path where files will be saved.
             prefix: Prefix for file names, e.g., "gt" or "pred".
         """
         for i in range(pose_output.shape[0]):
-            pose_array = pose_output[i].cpu().numpy()  # (T, 1, keypoints, 3)
+            pose_array = pose_output[i].cpu().numpy()  # (T, 1, K, 3)
             T, P, K, D = pose_array.shape
 
-            ###### To-Do: How to generate confidence values?
-            confidence = np.ones((T, P, K), dtype=np.float32)
+            # Velocity-based confidence estimation
+            # Compute frame-to-frame differences: (T-1, P, K, D)
+            diffs = np.diff(pose_array, axis=0)
+            # Compute L2 norm of motion per keypoint: (T-1, P, K)
+            velocity = np.linalg.norm(diffs, axis=-1)
+            # Pad the first frame with zeros to restore T: (T, P, K)
+            velocity = np.pad(velocity, ((1, 0), (0, 0), (0, 0)))
 
+            # Convert to confidence using exponential decay
+            confidence = np.exp(-velocity)
+            # Clip values to avoid exact 0 or 1
+            confidence = np.clip(confidence, 0.01, 1.0).astype(np.float32)
+
+            # Wrap and export the pose data
             pose_body = NumPyPoseBody(fps=25, data=pose_array, confidence=confidence)
             pose_obj = Pose(self.pose_header, pose_body)
 
@@ -208,3 +254,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
             with open(file_path, 'wb') as f:
                 pose_obj.write(f)
             self.logger.info(f'Saved pose file: {file_path}')
+
+            # Verify the file by reading it back
+            with open(file_path, 'rb') as f_check:
+                Pose.read(f_check.read())  # If error occurs, the file was not written correctly
+            self.logger.info(f'Pose file {file_path} read successfully.')
+
