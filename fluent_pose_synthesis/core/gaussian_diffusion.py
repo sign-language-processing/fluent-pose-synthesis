@@ -1,5 +1,5 @@
-import torch as th
 from typing import Optional, Dict, Any
+import torch as th
 
 from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
@@ -60,7 +60,8 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             pose_target (torch.Tensor): Ground truth pose sequence. Shape: (B, T, K, 3)
             t (torch.Tensor): Timestep tensor for diffusion. Shape: (B,)
             config (Any): Configuration object, should contain flags like `use_loss_mse`, `use_loss_3d`, etc.
-            model_kwargs (Optional[Dict[str, Any]]): Additional keyword arguments for the model. Should include 'mask' with shape (B, T, 1, K, 3), if used.
+            model_kwargs (Optional[Dict[str, Any]]): Additional keyword arguments for the model.
+                Should include 'mask' with shape (B, T, 1, K, 3), if used.
             noise (Optional[torch.Tensor]): Optional noise tensor. If None, generated internally.
         """
         # batch_size, num_frames, num_keypoints, num_dims = pose_target.shape

@@ -1,6 +1,7 @@
-import torch
-import torch.nn as nn
 from typing import Optional, Callable
+import torch
+import torch.nn as nn  # pylint: disable=consider-using-from-import
+
 
 from CAMDM.PyTorch.network.models import (
     PositionalEncoding,
@@ -291,7 +292,8 @@ class SignLanguagePoseDiffusion(nn.Module):
         disfluent_seq = y["input_sequence"]
         # Apply CFG: randomly drop the condition with probability cond_mask_prob
         keep = (
-            torch.rand(batch_size, device=disfluent_seq.device) < (1 - self.cond_mask_prob)
+            torch.rand(batch_size, device=disfluent_seq.device)
+            < (1 - self.cond_mask_prob)
         ).float()
         disfluent_seq = disfluent_seq * keep.view(batch_size, 1, 1, 1, 1)
         return self.forward(fluent_clip, disfluent_seq, t)
