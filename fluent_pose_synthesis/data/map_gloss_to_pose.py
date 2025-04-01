@@ -26,7 +26,7 @@ def create_gloss_to_pose_dict(
         # Use the first available pose, which is the frontal angle
         pose = poses[0] if poses else None
         # Keep complete original data
-        original_data = {k: v for k, v in datum.items()}
+        original_data = dict(datum.items())
 
         # Add pose for each gloss
         for gloss in glosses:

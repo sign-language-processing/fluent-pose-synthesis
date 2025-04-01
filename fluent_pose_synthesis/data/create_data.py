@@ -24,10 +24,11 @@ from fluent_pose_synthesis.data.map_gloss_to_pose import create_gloss_to_pose_di
 
 
 # Example call:
-# python create_data.py --corpus_dir /scratch/ronli --dictionary_dir /scratch/ronli --output_dir /scratch/ronli/output --max_examples 6
+# python create_data.py --corpus_dir /scratch/ronli --dictionary_dir /scratch/ronli
+# --output_dir /scratch/ronli/output --max_examples 6
 
 
-@dataclass
+@dataclass  # pylint: disable=too-few-public-methods
 class ProcessedSentence:
     concatenated_original_pose: Pose
     concatenated_updated_pose: Pose
@@ -264,7 +265,7 @@ class DGSPoseDataset:
         total_signs = 0
         replaced_signs = 0
         try:
-            for idx, data_entry in enumerate(dgs_corpus[split]):
+            for _, data_entry in enumerate(dgs_corpus[split]):
                 # Limit the number of examples to process
                 if (
                     self.max_examples
@@ -307,13 +308,13 @@ def convert_numpy_types(obj):
     """
     if isinstance(obj, np.integer):
         return int(obj)
-    elif isinstance(obj, np.floating):
+    if isinstance(obj, np.floating):
         return float(obj)
-    elif isinstance(obj, np.ndarray):
+    if isinstance(obj, np.ndarray):
         return obj.tolist()
-    elif isinstance(obj, dict):
+    if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
+    if isinstance(obj, list):
         return [convert_numpy_types(v) for v in obj]
     return obj
 
@@ -358,13 +359,15 @@ def main():
         "--corpus_dir",
         type=str,
         required=True,
-        help="Path to the DGS Corpus directory. If the dataset is not downloaded, it will be downloaded to this directory.",
+        help="Path to the DGS Corpus directory. If the dataset is not downloaded, "
+        "it will be downloaded to this directory.",
     )
     parser.add_argument(
         "--dictionary_dir",
         type=str,
         required=True,
-        help="Path to the DGS Types dictionary directory. If the dataset is not downloaded, it will be downloaded to this directory.",
+        help="Path to the DGS Types dictionary directory. If the dataset is not downloaded, "
+        "it will be downloaded to this directory.",
     )
     parser.add_argument(
         "--output_dir",

@@ -84,7 +84,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
 
         loss_terms = {}
 
-        if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
+        if self.loss_type in (LossType.KL, LossType.RESCALED_KL):
             loss_terms["loss"] = self._vb_terms_bpd(
                 model=model,
                 x_start=pose_target,
@@ -103,10 +103,10 @@ class PoseGaussianDiffusion(GaussianDiffusion):
                 ModelVarType.LEARNED,
                 ModelVarType.LEARNED_RANGE,
             ]:
-                B, C = pose_noisy.shape[:2]
+                batch_size, time = pose_noisy.shape[:2]
                 assert model_output.shape == (
-                    B,
-                    C * 2,
+                    batch_size,
+                    time * 2,
                     *pose_noisy.shape[2:],
                 ), f"Unexpected model output shape: {model_output.shape}"
                 model_output, model_var_values = th.split(model_output, C, dim=1)

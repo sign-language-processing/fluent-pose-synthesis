@@ -173,16 +173,12 @@ def example_dataset():
         for batch in dataloader:
             end_time = time.time()
             batch_loading_time = end_time - start_time
-            print(
-                "Data loading time for each iteration: {:.4f}s".format(
-                    batch_loading_time
-                )
-            )
+            print(f"Data loading time for each iteration: {batch_loading_time:.4f}s")
             loading_times.append(batch_loading_time)
             start_time = end_time
         avg_loading_time = sum(loading_times) / len(loading_times)
-        print("Average data loading time: {:.4f}s".format(avg_loading_time))
-        print("Total data loading time: {:.4f}s".format(sum(loading_times)))
+        print(f"Average data loading time: {avg_loading_time:.4f}s")
+        print(f"Total data loading time: {sum(loading_times):.4f}s")
 
 
 # if __name__ == '__main__':
