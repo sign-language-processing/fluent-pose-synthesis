@@ -7,9 +7,9 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
+from pose_format.torch.masked.collator import zero_pad_collator
 from CAMDM.PyTorch.diffusion.create_diffusion import create_gaussian_diffusion
-import CAMDM.PyTorch.utils.common as common
+from CAMDM.PyTorch.utils.common import fixseed, select_platform
 from CAMDM.PyTorch.utils.logger import Logger
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
@@ -20,7 +20,6 @@ from fluent_pose_synthesis.config.option import (
     add_diffusion_args,
     config_parse,
 )
-from pose_format.torch.masked.collator import zero_pad_collator
 
 
 def train(
@@ -30,8 +29,8 @@ def train(
     tb_writer: SummaryWriter,
 ):
     """Main training loop for sign language pose post-editing."""
-    common.fixseed(1024)
-    np_dtype = common.select_platform(32)
+    fixseed(1024)
+    np_dtype = select_platform(32)
 
     logger.info("Loading dataset...")
     train_dataset = SignLanguagePoseDataset(

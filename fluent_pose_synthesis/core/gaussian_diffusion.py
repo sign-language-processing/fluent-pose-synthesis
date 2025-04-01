@@ -1,7 +1,13 @@
 import torch as th
 from typing import Optional, Dict, Any
 
-from CAMDM.PyTorch.diffusion.gaussian_diffusion import *
+from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
+    GaussianDiffusion,
+    get_named_beta_schedule,
+    LossType,
+    ModelMeanType,
+    ModelVarType
+)
 
 
 class PoseGaussianDiffusion(GaussianDiffusion):
@@ -14,7 +20,6 @@ class PoseGaussianDiffusion(GaussianDiffusion):
         """
         # Generate the beta schedule from the provided parameters
         betas = get_named_beta_schedule(**schedule_kwargs)
-        self.collate_fn = dataloader.collate_fn
 
         # Initialize the parent GaussianDiffusion class with appropriate parameters
         super().__init__(

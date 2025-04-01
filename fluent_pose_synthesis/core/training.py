@@ -14,7 +14,7 @@ from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
     ModelVarType,
 )
 from CAMDM.PyTorch.network.training import BaseTrainingPortal
-import CAMDM.PyTorch.utils.common as common
+from CAMDM.PyTorch.utils.common import mkdir
 
 class PoseTrainingPortal(BaseTrainingPortal):
     def __init__(
@@ -217,7 +217,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             save_folder_name (str): Folder to save generated pose files.
         """
         self.model.eval()
-        common.mkdir(f"{self.save_dir}/{save_folder_name}")
+        mkdir(f"{self.save_dir}/{save_folder_name}")
 
         patched_dataloader = DataLoader(
             dataset=dataloader.dataset,

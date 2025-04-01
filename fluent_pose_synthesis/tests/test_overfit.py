@@ -4,6 +4,7 @@ from argparse import Namespace
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+from torch.nn.functional import cosine_similarity as cosine_sim
 import matplotlib.pyplot as plt
 
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
@@ -46,6 +47,8 @@ def get_toy_batch(batch_size=2, seq_len=40, keypoints=178):
             # Frame-level mask: Odd frames valid
             frame_mask = torch.ones(seq_len, dtype=torch.bool)
             frame_mask[::2] = False
+        else:
+            raise ValueError(f"Unsupported i={i}, batch_size must be 2")
 
         pose_data.append(sample)
         target_mask.append(frame_mask)
@@ -256,7 +259,7 @@ def compute_cosine_distance(pose1, pose2):
     """
     v1 = pose1.flatten()
     v2 = pose2.flatten()
-    cos = torch.nn.functional.cosine_similarity(v1, v2, dim=0)
+    cos = cosine_sim(v1, v2, dim=0)
     return 1 - cos.item()
 
 
