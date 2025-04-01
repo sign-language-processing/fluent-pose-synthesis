@@ -4,19 +4,17 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
-    GaussianDiffusion,
-    LossType,
-    ModelVarType,
-    ModelMeanType,
-)
-from CAMDM.PyTorch.network.training import BaseTrainingPortal
-import CAMDM.PyTorch.utils.common as common
-
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
 
+from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
+    GaussianDiffusion,
+    LossType,
+    ModelVarType,
+)
+from CAMDM.PyTorch.network.training import BaseTrainingPortal
+import CAMDM.PyTorch.utils.common as common
 
 class PoseTrainingPortal(BaseTrainingPortal):
     def __init__(
