@@ -1,45 +1,37 @@
-import sys
 import os
+import sys
 import time
 import shutil
 import argparse
-import torch
 from pathlib import Path
+from typing import Optional
+
+import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
 from fluent_pose_synthesis.data.load_data import SignLanguagePoseDataset
-from fluent_pose_synthesis.config.option import add_model_args, add_train_args, add_diffusion_args, config_parse ##to do
-
+from fluent_pose_synthesis.config.option import add_model_args, add_train_args, add_diffusion_args, config_parse
+from pose_format.torch.masked.collator import zero_pad_collator
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
 sys.path.append(CAMDM_PATH)
-
+from diffusion.create_diffusion import create_gaussian_diffusion
 import utils.common as common
 from utils.logger import Logger
-from diffusion.create_diffusion import create_gaussian_diffusion
-
-from pose_format.torch.masked.collator import zero_pad_collator
 
 
-def train(config: argparse.Namespace, resume: Optional[str], logger: Logger, tb_writer: SummaryWriter):
-    """
-    Main training loop for sign language pose post-editing.
-    Args:
-        config (argparse.Namespace): Parsed configuration object.
-        resume (Optional[str]): Path to checkpoint file to resume from.
-        logger (Logger): Logger instance for saving logs.
-        tb_writer (SummaryWriter): TensorBoard writer for visualization.
-    """
+def train(config: argparse.Namespace, resume_path: Path, logger: Logger, tb_writer: SummaryWriter):
+    """Main training loop for sign language pose post-editing."""
     common.fixseed(1024)
     np_dtype = common.select_platform(32)
 
-    print("Loading dataset...")
+    logger.info("Loading dataset...")
     train_dataset = SignLanguagePoseDataset(
-        data_dir=Path(config.data),
+        data_dir=config.data,
         split="train",
         fluent_frames=config.arch.clip_len,
         dtype=np_dtype,
@@ -57,7 +49,7 @@ def train(config: argparse.Namespace, resume: Optional[str], logger: Logger, tb_
     )
 
     logger.info(
-        f"\nTraining Dataset includes {len(train_dataset)} samples, "
+        f"Training Dataset includes {len(train_dataset)} samples, "
         f"with {config.arch.clip_len} fluent frames per sample."
     )
 
@@ -84,21 +76,20 @@ def train(config: argparse.Namespace, resume: Optional[str], logger: Logger, tb_
 
     trainer = PoseTrainingPortal(config, model, diffusion, train_dataloader, logger, tb_writer)
 
-    if resume is not None:
+    if resume_path is not None:
         try:
-            trainer.load_checkpoint(resume)
+            trainer.load_checkpoint(str(resume_path))
         except FileNotFoundError:
-            print(f"No checkpoint found at {resume}")
-            exit()
+            print(f"No checkpoint found at {resume_path}")
+            sys.exit(1)
 
     trainer.run_loop()
 
 
-if __name__ == '__main__':
+def main():
     start_time = time.time()
 
     parser = argparse.ArgumentParser(description='### Fluent Sign Language Pose Synthesis Training ###')
-
     parser.add_argument('-n', '--name', default='debug', type=str, help='The name of this training run')
     parser.add_argument('-c', '--config', default='./fluent_pose_synthesis/config/default.json',
                         type=str, help='Path to config file')
@@ -113,53 +104,56 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    config = config_parse(args)
+
+    # Convert key paths to Path objects
+    config.data = Path(config.data)
+    config.save = Path(config.save)
+
     if args.cluster:
-        # Override paths when running on a GPU cluster
-        args.data = '/scratch/ronli/output' + os.path.basename(args.data)
-        args.save = '/scratch/ronli/save' + args.name
+        config.data = Path("/scratch/ronli/output") / args.data
+        config.save = Path("/scratch/ronli/save") / args.name
 
-    if args.config:
-        config = config_parse(args)
-    else:
-        raise AssertionError("You must provide a config file using -c <config_path>")
-
+    # Debug mode settings
     if 'debug' in args.name:
         config.trainer.workers = 1
-        config.trainer.load_num = 5
-        config.trainer.batch_size = 5
+        config.trainer.load_num = 4
+        config.trainer.batch_size = 4
 
-    # If not resuming from checkpoint, ask before overwriting old save folder
-    if not args.cluster and os.path.exists(config.save) and 'debug' not in args.name and args.resume is None:
-        allow_cover = input('Model folder exists. Overwrite? (Y/N)').lower()
+    # Handle existing folder
+    if not args.cluster and config.save.exists() and 'debug' not in args.name and args.resume is None:
+        allow_cover = input('Model folder exists. Overwrite? (Y/N): ').lower()
         if allow_cover == 'n':
-            exit()
+            sys.exit(0)
+        shutil.rmtree(config.save, ignore_errors=True)
+
+    # Auto-resume for cluster
+    resume_path = None
+    if config.save.exists() and args.resume is None:
+        best_ckpt = config.save / 'best.pt'
+        if best_ckpt.exists():
+            resume_path = best_ckpt
         else:
-            shutil.rmtree(config.save, ignore_errors=True)
-    else:
-        # Auto-resume for cluster
-        if os.path.exists(config.save):
-            best_ckpt = os.path.join(config.save, 'best.pt')
-            if os.path.exists(best_ckpt):
-                args.resume = best_ckpt
-            else:
-                existing = [f for f in os.listdir(config.save) if 'weights_' in f]
-                if existing:
-                    epoch_nums = [int(f.split('_')[1].split('.')[0]) for f in existing]
-                    latest = max(epoch_nums)
-                    args.resume = os.path.join(config.save, f'weights_{latest}.pt')
+            ckpts = [f for f in config.save.glob('weights_*.pt')]
+            if ckpts:
+                latest = max(ckpts, key=lambda p: int(p.stem.split('_')[1]))
+                resume_path = latest
 
-    os.makedirs(config.save, exist_ok=True)
+    config.save.mkdir(parents=True, exist_ok=True)
 
-    logger = Logger(os.path.join(config.save, 'log.txt'))
-    tb_writer = SummaryWriter(log_dir=os.path.join(config.save, 'runtime'))
+    logger = Logger(config.save / 'log.txt')
+    tb_writer = SummaryWriter(log_dir=config.save / 'runtime')
 
     config.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Save the config for reference
-    with open('%s/config.json' % config.save, 'w') as f:
+    # Save config
+    with open(config.save / "config.json", "w", encoding="utf-8") as f:
         f.write(str(config))
-        f.close()
 
-    logger.info('\nLaunching training with config:\n%s' % config)
-    train(config, args.resume, logger, tb_writer)
-    logger.info('\nTotal training time: %.2f mins' % ((time.time() - start_time) / 60))
+    logger.info(f"\nLaunching training with config:\n{config}")
+    train(config, resume_path, logger, tb_writer)
+    logger.info(f"\nTotal training time: {(time.time() - start_time) / 60:.2f} mins")
+
+
+if __name__ == "__main__":
+    main()

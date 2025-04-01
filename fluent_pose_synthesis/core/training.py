@@ -1,27 +1,17 @@
-# Path Setup (must precede project-specific imports)
-import os
-import sys
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
-sys.path.append(CAMDM_PATH)
-
-# Standard Library and Third-party Imports
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-# Project Imports
-from diffusion.gaussian_diffusion import (
+from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
     LossType,
     ModelVarType,
     ModelMeanType,
 )
-from network.training import BaseTrainingPortal
-from utils import common
+from CAMDM.PyTorch.network.training import BaseTrainingPortal
+import CAMDM.PyTorch.utils.common as common
 
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
@@ -84,7 +74,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
     def diffuse(
         self,
         fluent_clip: Tensor,
-        time: Tensor,
+        t: Tensor,
         cond: Dict[str, Tensor],
         noise: Optional[Tensor] = None,
         return_loss: bool = False,
@@ -93,30 +83,25 @@ class PoseTrainingPortal(BaseTrainingPortal):
         Perform diffusion on the input fluent_clip tensor, and return the model output.
         Args:
             fluent_clip: Input target pose clip. Shape: (batch_size, time, 1, keypoints, 3)
-            time: Diffusion timesteps for each sample. Shape: (batch_size,)
+            t: Diffusion timesteps for each sample. Shape: (batch_size,)
             cond: Conditioning inputs, must include "target_mask" and "input_sequence".
             noise: Optional noise to apply during diffusion.
             return_loss: Whether to compute and return training losses.
         """
         if return_loss:
-            # Squeeze dimension 2 (people)
             x_start = fluent_clip.squeeze(2)  # (batch_size, time, keypoints, 3)
             if noise is None:
                 noise = torch.randn_like(x_start)
-            x_t = self.diffusion.q_sample(x_start, time, noise=noise)
+            x_t = self.diffusion.q_sample(x_start, t, noise=noise)
 
-            x_start_perm = x_start.permute(
-                0, 2, 3, 1
-            )  # (batch_size, keypoints, 3, time)
+            x_start_perm = x_start.permute(0, 2, 3, 1)
             x_t_perm = x_t.permute(0, 2, 3, 1)
 
-            x_t_for_model = x_t.unsqueeze(2)  # (batch_size, time, 1, keypoints, 3)
+            x_t_for_model = x_t.unsqueeze(2)
             model_output = self.model.interface(
-                x_t_for_model, self.diffusion._scale_timesteps(time), cond
-            )  # (batch_size, time, keypoints, 3)
-            model_output_perm = model_output.permute(
-                0, 2, 3, 1
-            )  # (batch_size, keypoints, 3, time)
+                x_t_for_model, self.diffusion._scale_timesteps(t), cond
+            )
+            model_output_perm = model_output.permute(0, 2, 3, 1)
 
             loss_terms = {}
 
@@ -140,7 +125,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start_perm,
                     x_t=x_t_perm,
-                    time=time,
+                    t=t,
                     clip_denoised=False,
                 )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
@@ -149,24 +134,20 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
             target = {
                 ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(
-                    x_start=x_start_perm, x_t=x_t_perm, time=time
+                    x_start=x_start_perm, x_t=x_t_perm, t=t
                 )[0],
                 ModelMeanType.START_X: x_start_perm,
                 ModelMeanType.EPSILON: noise,
             }[self.diffusion.model_mean_type]
 
-            # Ensure shapes match
             assert (
                 model_output_perm.shape == target.shape == x_start_perm.shape
             ), "Target shape mismatch"
 
-            # cond['target_mask']: shape [batch_size, time]
-            frame_mask = cond["target_mask"]  # [batch_size, time]
-            # Get keypoints and 3 from model_output_perm: shape [batch_size, keypoints, 3, time]
-            batch_size, keypoints, dimensions, time = model_output_perm.shape
-            # Expand frame_mask to [batch_size, 1, 1, time] → then broadcast to [batch_size, keypoints, 3, time]
+            frame_mask = cond["target_mask"]
+            batch_size, keypoints, dimensions, time_steps = model_output_perm.shape
             mask = frame_mask[:, None, None, :].expand(
-                batch_size, keypoints, dimensions, time
+                batch_size, keypoints, dimensions, time_steps
             )
 
             if self.config.trainer.use_loss_mse:
@@ -175,29 +156,22 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 )
 
             if self.config.trainer.use_loss_vel:
-                target_vel = (
-                    target[..., 1:] - target[..., :-1]
-                )  # (batch_size, keypoints, 3, time-1)
+                target_vel = target[..., 1:] - target[..., :-1]
                 model_output_vel = (
                     model_output_perm[..., 1:] - model_output_perm[..., :-1]
                 )
-                mask_vel = mask[..., 1:]  # (batch_size, keypoints, 3, time-1)
-
+                mask_vel = mask[..., 1:]
                 loss_terms["loss_data_vel"] = self.diffusion.masked_l2(
                     target_vel, model_output_vel, mask_vel
                 )
 
             if self.config.trainer.use_loss_3d:
-                target_rot = target.permute(
-                    0, 3, 1, 2
-                )  # (batch_size, time, keypoints, 3)
-                pred_rot = model_output_perm.permute(
-                    0, 3, 1, 2
-                )  # (batch_size, time, keypoints, 3)
-                frame_mask = cond["target_mask"]  # shape: [batch_size, time]
+                target_rot = target.permute(0, 3, 1, 2)
+                pred_rot = model_output_perm.permute(0, 3, 1, 2)
+                frame_mask = cond["target_mask"]
                 mask_rot = frame_mask[:, :, None, None].expand(
                     -1, -1, self.config.arch.keypoints, self.config.arch.dims
-                )  # [batch_size, time, keypoints, 3]
+                )
 
                 loss_terms["loss_geo_xyz"] = self.diffusion.masked_l2(
                     target_rot, pred_rot, mask_rot
@@ -221,16 +195,13 @@ class PoseTrainingPortal(BaseTrainingPortal):
             loss_terms["loss"] = total_loss
             print("Total loss:", total_loss.mean().item())
 
-            model_output_final = model_output_perm.permute(
-                0, 3, 1, 2
-            )  # (batch_size, time, keypoints, 3)
+            model_output_final = model_output_perm.permute(0, 3, 1, 2)
             return model_output_final, loss_terms
 
         else:
             with torch.no_grad():
-                model_output = self.model.interface(fluent_clip, time, cond)
-
-            return model_output.unsqueeze(2)  # (batch_size, time, 1, keypoints, 3)
+                model_output = self.model.interface(fluent_clip, t, cond)
+            return model_output.unsqueeze(2)
 
     def evaluate_sampling(
         self, dataloader: DataLoader, save_folder_name: str = "init_samples"

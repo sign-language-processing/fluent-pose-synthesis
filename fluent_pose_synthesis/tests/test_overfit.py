@@ -1,5 +1,3 @@
-import os
-import sys
 import random
 from argparse import Namespace
 
@@ -10,21 +8,13 @@ import matplotlib.pyplot as plt
 
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
-
-# Add submodule path for CAMDM
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
-sys.path.append(CAMDM_PATH)
-
-from diffusion.create_diffusion import create_gaussian_diffusion    # pylint: disable=wrong-import-position
-
-# Ensure root path is in sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from CAMDM.PyTorch.diffusion.create_diffusion import create_gaussian_diffusion
 
 
 class DummyDataset(Dataset):
     def __len__(self):
         return 1
+
     def __getitem__(self, idx):
         return {"data": torch.tensor(0)}  # minimal dummy data
 
@@ -32,10 +22,14 @@ class DummyDataset(Dataset):
 def get_toy_batch(batch_size=2, seq_len=40, keypoints=178):
     assert batch_size == 2, "get_toy_batch currently only supports batch_size=2"
 
-    base_linear = torch.linspace(0, 1, seq_len * keypoints * 3).reshape(seq_len, 1, keypoints, 3)
-    base_sine = torch.sin(torch.linspace(0, 4 * np.pi, seq_len)).unsqueeze(1).unsqueeze(2)  # [T, 1, 1]
+    base_linear = torch.linspace(0, 1, seq_len * keypoints * 3).reshape(
+        seq_len, 1, keypoints, 3
+    )
+    base_sine = (
+        torch.sin(torch.linspace(0, 4 * np.pi, seq_len)).unsqueeze(1).unsqueeze(2)
+    )  # [T, 1, 1]
     base_sine = base_sine.expand(seq_len, 1, keypoints).unsqueeze(-1)  # [T, 1, K, 1]
-    base_sine = base_sine.repeat(1, 1, 1, 3)  # [T, 1, K, 3] -> same sin pattern for x/y/z
+    base_sine = base_sine.repeat(1, 1, 1, 3)  # [T, 1, K, 3]
 
     pose_data = []
     target_mask = []
@@ -44,30 +38,31 @@ def get_toy_batch(batch_size=2, seq_len=40, keypoints=178):
     for i in range(batch_size):
         if i == 0:
             sample = base_linear + torch.randn_like(base_linear) * 0.01
+            # Frame-level mask: Even frames valid
+            frame_mask = torch.ones(seq_len, dtype=torch.bool)
+            frame_mask[1::2] = False
         elif i == 1:
-            sample = 0.5 + 0.2 * base_sine + torch.randn_like(base_sine) * 0.01  # Sine pattern
+            sample = 0.5 + 0.2 * base_sine + torch.randn_like(base_sine) * 0.01
+            # Frame-level mask: Odd frames valid
+            frame_mask = torch.ones(seq_len, dtype=torch.bool)
+            frame_mask[::2] = False
 
         pose_data.append(sample)
+        target_mask.append(frame_mask)
 
-        # Create distinct masks
-        mask = torch.ones_like(sample)
-        mask[i::2] = 0
-        target_mask.append(mask)
-
-        # Input sequence: one is 0, one is 1
         input_seq = torch.ones(1, keypoints, 3) * i
         input_sequence.append(input_seq)
 
-    pose_data = torch.stack(pose_data, dim=0)
-    target_mask = torch.stack(target_mask, dim=0)
-    input_sequence = torch.stack(input_sequence, dim=0)
+    pose_data = torch.stack(pose_data, dim=0)  # [B, T, 1, K, 3]
+    target_mask = torch.stack(target_mask, dim=0)  # [B, T]
+    input_sequence = torch.stack(input_sequence, dim=0)  # [B, 1, K, 3]
 
     batch = {
         "data": pose_data.clone(),
         "conditions": {
             "target_mask": target_mask,
             "input_sequence": input_sequence,
-        }
+        },
     }
     return batch
 
@@ -90,7 +85,7 @@ def create_minimal_config(device="cpu"):
             lr_anneal_steps=0,
             weight_decay=0,
             ema=False,
-            save_freq=5
+            save_freq=5,
         ),
         arch=Namespace(
             keypoints=178,
@@ -104,13 +99,9 @@ def create_minimal_config(device="cpu"):
             decoder="trans_enc",
             ablation=None,
             activation="gelu",
-            legacy=False
+            legacy=False,
         ),
-        diff=Namespace(
-            noise_schedule="cosine",
-            diffusion_steps=4,
-            sigma_small=True
-        )
+        diff=Namespace(noise_schedule="cosine", diffusion_steps=4, sigma_small=True),
     )
 
 
@@ -125,14 +116,17 @@ def test_overfit_toy_batch():
     batch = get_toy_batch(
         batch_size=config.trainer.batch_size,
         seq_len=config.arch.clip_len,
-        keypoints=config.arch.keypoints
+        keypoints=config.arch.keypoints,
     )
 
     # Move batch to device
     batch = {
-        k: (v.to(config.device) if isinstance(v, torch.Tensor) else {
-            kk: vv.to(config.device) for kk, vv in v.items()
-        }) for k, v in batch.items()
+        k: (
+            v.to(config.device)
+            if isinstance(v, torch.Tensor)
+            else {kk: vv.to(config.device) for kk, vv in v.items()}
+        )
+        for k, v in batch.items()
     }
 
     # Create diffusion and model
@@ -150,13 +144,16 @@ def test_overfit_toy_batch():
         dropout=config.arch.dropout,
         arch=config.arch.decoder,
         cond_mask_prob=config.trainer.cond_mask_prob,
-        device=config.device
+        device=config.device,
     ).to(config.device)
 
     trainer = PoseTrainingPortal(
-        config, model, diffusion,
+        config,
+        model,
+        diffusion,
         dataloader=dummy_dataloader,
-        logger=None, tb_writer=None
+        logger=None,
+        tb_writer=None,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config.trainer.lr)
@@ -165,7 +162,9 @@ def test_overfit_toy_batch():
     losses = []
 
     for step in range(config.trainer.epoch):
-        t, weights = trainer.schedule_sampler.sample(config.trainer.batch_size, config.device)
+        t, weights = trainer.schedule_sampler.sample(
+            config.trainer.batch_size, config.device
+        )
         _, loss_dict = trainer.diffuse(
             batch["data"], t, batch["conditions"], return_loss=True
         )
@@ -177,7 +176,9 @@ def test_overfit_toy_batch():
         loss.backward()
         optimizer.step()
 
-    assert losses[-1] < 1e-3, "Final loss is too high. Model failed to overfit the toy batch."
+    assert (
+        losses[-1] < 1e-3
+    ), "Final loss is too high. Model failed to overfit the toy batch."
     plot_loss_curve(losses, save_path="overfit_loss_curve.png")
 
     # Check model output differences
@@ -188,18 +189,25 @@ def test_overfit_toy_batch():
         out1 = model(
             fluent_clip=batch["data"][0:1],
             disfluent_seq=batch["conditions"]["input_sequence"][0:1],
-            t=t
+            t=t,
         )
 
         out2 = model(
             fluent_clip=batch["data"][1:2],
             disfluent_seq=batch["conditions"]["input_sequence"][1:2],
-            t=t
+            t=t,
         )
 
         print(f"out1 shape: {out1.shape}, out2 shape: {out2.shape}")
-        expected_shape = (1, config.arch.clip_len, config.arch.keypoints, config.arch.dims)
-        assert out1.shape == out2.shape == expected_shape, f"Unexpected output shape, expected {expected_shape}"
+        expected_shape = (
+            1,
+            config.arch.clip_len,
+            config.arch.keypoints,
+            config.arch.dims,
+        )
+        assert (
+            out1.shape == out2.shape == expected_shape
+        ), f"Unexpected output shape, expected {expected_shape}"
 
         # Compute multiple metrics to assess output difference
         l2_diff = torch.norm(out1 - out2).item()
@@ -211,14 +219,16 @@ def test_overfit_toy_batch():
         print(f"Cosine distance: {cosine_dist:.6f}")
 
         # Assert based on multiple metrics
-        assert avg_kpt_error > 0.01 or cosine_dist > 0.01, "Outputs are too similar. Possible collapse."
+        assert (
+            avg_kpt_error > 0.01 or cosine_dist > 0.01
+        ), "Outputs are too similar. Possible collapse."
 
     print("Overfitting test passed.")
 
 
 def plot_loss_curve(losses, save_path="loss_curve.png"):
     plt.figure()
-    plt.plot(losses, label='Loss')
+    plt.plot(losses, label="Loss")
     plt.xlabel("Step")
     plt.ylabel("Loss")
     plt.yscale("log")
@@ -235,8 +245,8 @@ def compute_average_keypoint_error(pose1, pose2):
     Computes average L2 distance per keypoint per frame.
     """
     assert pose1.shape == pose2.shape, "Shape mismatch"
-    diff = torch.norm(pose1 - pose2, dim=-1)    # [B, T, K]
-    return diff.mean().item()                   # scalar
+    diff = torch.norm(pose1 - pose2, dim=-1)  # [B, T, K]
+    return diff.mean().item()  # scalar
 
 
 def compute_cosine_distance(pose1, pose2):

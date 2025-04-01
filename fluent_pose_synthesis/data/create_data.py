@@ -67,7 +67,7 @@ class DGSPoseDataset:
                                 data_dir=self.corpus_dir)
 
         return dgs_corpus
-        
+
     def _load_dgs_types_dictionary(self) -> Dict[str, Dict[str, Any]]:
         """
         Loads the DGS Types dataset and creates a gloss-to-pose dictionary.
@@ -79,11 +79,11 @@ class DGSPoseDataset:
             include_pose="holistic",
             process_pose=False
         )
-        dgs_types = tfds.load('dgs_types', 
-                              builder_kwargs=dict(config=config), 
+        dgs_types = tfds.load('dgs_types',
+                              builder_kwargs=dict(config=config),
                               data_dir=self.dictionary_dir)
         dgs_types_dict, _ = create_gloss_to_pose_dict(dgs_types)
-        
+
         return dgs_types_dict
 
     def _should_replace(self, gloss: str) -> bool:
@@ -106,7 +106,7 @@ class DGSPoseDataset:
         # Read the pose header from the dataset's predefined file
         with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
             pose_header = PoseHeader.read(BufferReader(buffer.read()))
-        
+
         return pose_header
 
     def _create_pose_object(self, pose_datum: Dict[str, Any], dataset_name: str) -> Pose:
@@ -123,7 +123,7 @@ class DGSPoseDataset:
         pose_data = pose_datum["data"].numpy()
         conf = pose_datum["conf"].numpy()
         pose_body = NumPyPoseBody(fps, pose_data, conf)
-        
+
         return Pose(pose_header, pose_body)
 
     def _process_sentence(self, data_entry: Dict[str, Any]) -> ProcessedSentence:
@@ -131,10 +131,10 @@ class DGSPoseDataset:
         Processes a single sentence entry from the DGS Corpus.
         Args:
             data_entry (Dict[str, Any]): A single sentence entry from the DGS Corpus.
-        """ 
+        """
         original_poses_sequence = []
         updated_poses_sequence = []
-       
+
         # Sentence data
         sentence = data_entry['sentence']
         sentence_start_time = sentence['start'].numpy()
@@ -206,7 +206,7 @@ class DGSPoseDataset:
         if not original_poses_sequence or not updated_poses_sequence:
             logging.warning(f"Skipping sentence {metadata['id']} due to empty pose sequences.")
             return None
-        
+
         # Concatenate poses
         concatenated_original_pose = concatenate_poses(original_poses_sequence)
         concatenated_updated_pose = concatenate_poses(updated_poses_sequence)
@@ -230,7 +230,7 @@ class DGSPoseDataset:
             global_counter (Dict[str, int]): A dictionary to track the total processed examples globally.
         Yields:
             ProcessedSentence: The processed sentence data for each entry.
-        """        
+        """
         dgs_corpus = self._load_dgs_corpus()
         total_signs = 0
         replaced_signs = 0
@@ -250,7 +250,7 @@ class DGSPoseDataset:
                 print(f"Processed {global_counter['processed']}/{self.max_examples or 'all'} sentences in total. "
                     f"Current split: {split}. Sentence ID: {processed_sentence.metadata['id']}")
                 yield processed_sentence
-        finally:  
+        finally:
             print(f"Processing complete for split: {split}.")
             print(f"Total signs: {total_signs}")
             print(f"Replaced signs: {replaced_signs}")
@@ -310,7 +310,7 @@ def setup_logging(output_dir: Path, log_filename: str="processing.log") -> Path:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(console_handler)
-    
+
     return log_file_path
 
 
@@ -353,7 +353,7 @@ def main():
             # Save metadata
             metadata_path = split_output_path / f"{split}_{idx + 1}_metadata.json"
             save_metadata_to_file(processed_sentence.metadata, metadata_path)
-            
+
             # Log processing information
             logging.info(f"Processed sentence {idx + 1}: {processed_sentence.metadata['id']}")
             logging.info(f"Original pose saved to: {original_pose_path}")
