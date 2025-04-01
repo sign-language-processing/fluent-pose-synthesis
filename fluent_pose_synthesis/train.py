@@ -167,7 +167,7 @@ def main():
         if best_ckpt.exists():
             resume_path = best_ckpt
         else:
-            ckpts = [f for f in config.save.glob("weights_*.pt")]
+            ckpts = list(config.save.glob("weights_*.pt"))
             if ckpts:
                 latest = max(ckpts, key=lambda p: int(p.stem.split("_")[1]))
                 resume_path = latest

@@ -4,7 +4,7 @@ from argparse import Namespace
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
-from torch.nn.functional import cosine_similarity as cosine_sim
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
@@ -108,6 +108,7 @@ def create_minimal_config(device="cpu"):
     )
 
 
+# pylint: disable=too-many-locals
 def test_overfit_toy_batch():
     torch.manual_seed(0)
     np.random.seed(0)
@@ -259,7 +260,7 @@ def compute_cosine_distance(pose1, pose2):
     """
     v1 = pose1.flatten()
     v2 = pose2.flatten()
-    cos = cosine_sim(v1, v2, dim=0)
+    cos = F.cosine_similarity(v1, v2, dim=0)
     return 1 - cos.item()
 
 
