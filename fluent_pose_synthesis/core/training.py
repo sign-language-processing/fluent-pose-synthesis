@@ -126,7 +126,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     t=t,
                     clip_denoised=False,
                 )["output"]
-                if self.loss_type == LossType.RESCALED_MSE:
+                if self.diffusion.loss_type == LossType.RESCALED_MSE:
                     loss_terms["vb"] *= self.diffusion.num_timesteps / 1000.0
                 print("vb loss:", loss_terms["vb"].mean().item())
 
