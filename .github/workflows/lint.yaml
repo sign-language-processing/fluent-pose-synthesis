@@ -7,20 +7,28 @@ on:
     branches: [ master, main ]
 
 jobs:
-  test:
-    name: Lint
+  lint:
+    name: Lint Code
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Requirements
+      - name: Install dependencies
         run: |
           pip install .[dev]
           pip install torch
 
-      - name: Lint Code
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+
+      - name: Run Pylint
         run: pylint fluent_pose_synthesis

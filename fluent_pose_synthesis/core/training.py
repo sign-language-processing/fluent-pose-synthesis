@@ -132,13 +132,19 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     loss_terms["vb"] *= self.diffusion.num_timesteps / 1000.0
                 print("vb loss:", loss_terms["vb"].mean().item())
 
-            target = {
-                ModelMeanType.PREVIOUS_X: self.diffusion.q_posterior_mean_variance(
+            mmt = self.diffusion.model_mean_type  # real Enum instance from diffusion
+
+            if mmt.name == "PREVIOUS_X":
+                target = self.diffusion.q_posterior_mean_variance(
                     x_start=x_start_perm, x_t=x_t_perm, t=t
-                )[0],
-                ModelMeanType.START_X: x_start_perm,
-                ModelMeanType.EPSILON: noise,
-            }[self.diffusion.model_mean_type]
+                )[0]
+            elif mmt.name == "START_X":
+                target = x_start_perm
+            elif mmt.name == "EPSILON":
+                target = noise
+            else:
+                raise ValueError(f"Unsupported model_mean_type: {mmt}")
+
 
             assert (
                 model_output_perm.shape == target.shape == x_start_perm.shape
