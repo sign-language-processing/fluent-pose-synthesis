@@ -16,6 +16,7 @@ from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
 from CAMDM.PyTorch.network.training import BaseTrainingPortal
 from CAMDM.PyTorch.utils.common import mkdir
 
+
 class PoseTrainingPortal(BaseTrainingPortal):
     def __init__(
         self,
@@ -76,7 +77,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
         cond: Dict[str, Tensor],
         noise: Optional[Tensor] = None,
         return_loss: bool = False,
-    ) -> Tuple[Tensor, Dict[str, Tensor]]:
+    ) -> Tuple[Tensor, Dict[str, Tensor]]:  # pylint: disable=arguments-renamed
         """
         Perform diffusion on the input fluent_clip tensor, and return the model output.
         Args:
@@ -98,7 +99,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             x_t_for_model = x_t.unsqueeze(2)
             model_output = self.model.interface(
                 x_t_for_model, self.diffusion._scale_timesteps(t), cond
-            )
+            )   # pylint: disable=protected-access
             model_output_perm = model_output.permute(0, 2, 3, 1)
 
             loss_terms = {}
@@ -125,7 +126,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     x_t=x_t_perm,
                     t=t,
                     clip_denoised=False,
-                )["output"]
+                )["output"] # pylint: disable=protected-access
                 if self.diffusion.loss_type == LossType.RESCALED_MSE:
                     loss_terms["vb"] *= self.diffusion.num_timesteps / 1000.0
                 print("vb loss:", loss_terms["vb"].mean().item())
@@ -142,7 +143,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 target = noise
             else:
                 raise ValueError(f"Unsupported model_mean_type: {mmt}")
-
 
             assert (
                 model_output_perm.shape == target.shape == x_start_perm.shape
@@ -202,10 +202,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
             model_output_final = model_output_perm.permute(0, 3, 1, 2)
             return model_output_final, loss_terms
 
-        else:
-            with torch.no_grad():
-                model_output = self.model.interface(fluent_clip, t, cond)
-            return model_output.unsqueeze(2)
+        with torch.no_grad():
+            model_output = self.model.interface(fluent_clip, t, cond)
+        return model_output.unsqueeze(2)
 
     def evaluate_sampling(
         self, dataloader: DataLoader, save_folder_name: str = "init_samples"

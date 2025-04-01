@@ -387,7 +387,7 @@ def main():
     os.makedirs(output_path, exist_ok=True)
     # Setup logging
     log_file_path = setup_logging(output_path)
-    logging.info(f"Logging to file: {log_file_path}")
+    logging.info("Logging to file: %s", log_file_path)
     # Global counter to track total processed examples
     global_counter = {"processed": 0}
 
@@ -395,7 +395,7 @@ def main():
     for split in ["train", "validation", "test"]:
         split_output_path = output_path / split
         os.makedirs(split_output_path, exist_ok=True)
-        logging.info(f"Starting processing for split: {split}")
+        logging.info("Starting processing for split: %s", split)
         # Process and save the dataset
         for idx, processed_sentence in enumerate(
             dgs_pose_dataset.generate_dataset(
@@ -418,16 +418,18 @@ def main():
 
             # Log processing information
             logging.info(
-                f"Processed sentence {idx + 1}: {processed_sentence.metadata['id']}"
+                "Processed sentence %d: %s", idx + 1, processed_sentence.metadata["id"]
             )
-            logging.info(f"Original pose saved to: {original_pose_path}")
-            logging.info(f"Updated pose saved to: {updated_pose_path}")
-            logging.info(f"Metadata saved to: {metadata_path}")
+            logging.info("Original pose saved to: %s", original_pose_path)
+            logging.info("Updated pose saved to: %s", updated_pose_path)
+            logging.info("Metadata saved to: %s", metadata_path)
+
             valid_gloss_count = processed_sentence.valid_gloss_count
             replaced_gloss_count = processed_sentence.replaced_gloss_count
-            logging.info(f"Valid gloss count: {valid_gloss_count}")
-            logging.info(f"Replaced gloss count: {replaced_gloss_count}")
-            logging.info(f"Metadata: {processed_sentence.metadata}\n")
+
+            logging.info("Valid gloss count: %d", valid_gloss_count)
+            logging.info("Replaced gloss count: %d", replaced_gloss_count)
+            logging.info("Metadata: %s", processed_sentence.metadata)
 
             # Break if maximum examples is reached
             if args.max_examples and global_counter["processed"] >= args.max_examples:

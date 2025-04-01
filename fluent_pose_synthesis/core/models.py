@@ -153,7 +153,8 @@ class SignLanguagePoseDiffusion(nn.Module):
         self.sequence_pos_encoder = BatchFirstWrapper(
             PositionalEncoding(d_model=latent_dim, dropout=dropout)
         )
-        # Timestep embedder: expects input (B,) and returns (1, B, latent_dim); post_transform converts it to (B, 1, latent_dim)
+        # Timestep embedder: expects input (B,) and returns (1, B, latent_dim);
+        # post_transform converts it to (B, 1, latent_dim)
         self.embed_timestep = BatchFirstWrapper(
             TimestepEmbedder(latent_dim, self.sequence_pos_encoder),
             pre_transform=lambda x: x,  # Identity transform for input (B,)
@@ -283,14 +284,14 @@ class SignLanguagePoseDiffusion(nn.Module):
         Interface for Classifier-Free Guidance (CFG).
         Args:
             fluent_clip (torch.Tensor): (B, L_target, people, keypoints, dims) target fluent clip.
-            t (torch.Tensor): (B,) diffusion time steps.
+            t (torch.Tensor): (batch_size,) diffusion time steps.
             y (Dict): Dictionary containing condition information.
         """
-        B = fluent_clip.size(0)
+        batch_size = fluent_clip.size(0)
         disfluent_seq = y["input_sequence"]
         # Apply CFG: randomly drop the condition with probability cond_mask_prob
         keep = (
-            torch.rand(B, device=disfluent_seq.device) < (1 - self.cond_mask_prob)
+            torch.rand(batch_size, device=disfluent_seq.device) < (1 - self.cond_mask_prob)
         ).float()
-        disfluent_seq = disfluent_seq * keep.view(B, 1, 1, 1, 1)
+        disfluent_seq = disfluent_seq * keep.view(batch_size, 1, 1, 1, 1)
         return self.forward(fluent_clip, disfluent_seq, t)

@@ -63,7 +63,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             model_kwargs (Optional[Dict[str, Any]]): Additional keyword arguments for the model. Should include 'mask' with shape (B, T, 1, K, 3), if used.
             noise (Optional[torch.Tensor]): Optional noise tensor. If None, generated internally.
         """
-        batch_size, num_frames, num_keypoints, num_dims = pose_target.shape
+        # batch_size, num_frames, num_keypoints, num_dims = pose_target.shape
 
         # Diffuse the target pose to obtain x_t
         pose_noisy = self.q_sample(pose_target, t, noise=noise)
