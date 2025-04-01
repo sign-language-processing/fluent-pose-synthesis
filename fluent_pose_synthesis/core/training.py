@@ -1,3 +1,4 @@
+# pylint: disable=protected-access, arguments-renamed
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
 import torch
@@ -77,7 +78,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
         cond: Dict[str, Tensor],
         noise: Optional[Tensor] = None,
         return_loss: bool = False,
-    ) -> Tuple[Tensor, Dict[str, Tensor]]:  # pylint: disable=arguments-renamed
+    ) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Perform diffusion on the input fluent_clip tensor, and return the model output.
         Args:
@@ -126,7 +127,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     x_t=x_t_perm,
                     t=t,
                     clip_denoised=False,
-                )["output"] # pylint: disable=protected-access
+                )["output"]
                 if self.diffusion.loss_type == LossType.RESCALED_MSE:
                     loss_terms["vb"] *= self.diffusion.num_timesteps / 1000.0
                 print("vb loss:", loss_terms["vb"].mean().item())

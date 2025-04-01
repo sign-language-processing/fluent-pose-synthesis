@@ -99,7 +99,8 @@ class DGSPoseDataset:
         Args:
             gloss (str): The gloss to check.
         """
-        # Check if a given gloss is in DGS types dictionary and has a corresponding pose, and is not a special generic sign
+        # Check if a given gloss is in DGS types dictionary and has a corresponding pose,
+        # and is not a special generic sign
         return (
             not gloss.startswith("$")
             and gloss in self.dictionary
@@ -153,7 +154,6 @@ class DGSPoseDataset:
         # Sentence data
         sentence = data_entry["sentence"]
         sentence_start_time = sentence["start"].numpy()
-        sentence_end_time = sentence["end"].numpy()
         # Gloss data
         glosses = sentence["glosses"]["gloss"].numpy()
         gloss_start_times = sentence["glosses"]["start"].numpy()
@@ -227,7 +227,7 @@ class DGSPoseDataset:
         # Ensure non-empty pose sequences
         if not original_poses_sequence or not updated_poses_sequence:
             logging.warning(
-                f"Skipping sentence {metadata['id']} due to empty pose sequences."
+                "Skipping sentence %s due to empty pose sequences.", metadata["id"]
             )
             return None
 
@@ -237,7 +237,11 @@ class DGSPoseDataset:
 
         assert (
             concatenated_updated_pose.body.fps == concatenated_original_pose.body.fps
-        ), f"FPS mismatch: Original FPS = {concatenated_original_pose.body.fps}, Updated FPS = {concatenated_updated_pose.body.fps}. Ensure FPS is consistent during loading."
+        ), (
+            f"FPS mismatch: Original FPS = {concatenated_original_pose.body.fps}, "
+            f"Updated FPS = {concatenated_updated_pose.body.fps}. "
+            "Ensure FPS is consistent during loading."
+        )
 
         return ProcessedSentence(
             concatenated_original_pose=concatenated_original_pose,
