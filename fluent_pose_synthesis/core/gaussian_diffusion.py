@@ -3,13 +3,7 @@ import os
 import torch as th
 from typing import Optional, Dict, Any
 
-# Set up the CAMDM path (adjust BASE_DIR as needed)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CAMDM_PATH = os.path.join(BASE_DIR, "CAMDM", "PyTorch")
-sys.path.append(CAMDM_PATH)
-
-# Import all necessary definitions from CAMDM's gaussian_diffusion
-from diffusion.gaussian_diffusion import *
+from CAMDM.PyTorch.diffusion.gaussian_diffusion import *
 
 
 class PoseGaussianDiffusion(GaussianDiffusion):
@@ -40,10 +34,18 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             lambda_root_vel=kwargs.get("lambda_root_vel", 0.0),
             lambda_vel_rcxyz=kwargs.get("lambda_vel_rcxyz", 0.0),
             lambda_fc=kwargs.get("lambda_fc", 0.0),
-            data_rep=kwargs.get("data_rep", "rot6d")
+            data_rep=kwargs.get("data_rep", "rot6d"),
         )
 
-    def training_losses_pose(self, model: th.nn.Module, pose_target:th.Tensor, t: th.Tensor, config: Any, model_kwargs: Optional[Dict[str, Any]] = None, noise: Optional[th.Tensor] = None) -> Dict[str, th.Tensor]:
+    def training_losses_pose(
+        self,
+        model: th.nn.Module,
+        pose_target: th.Tensor,
+        t: th.Tensor,
+        config: Any,
+        model_kwargs: Optional[Dict[str, Any]] = None,
+        noise: Optional[th.Tensor] = None,
+    ) -> Dict[str, th.Tensor]:
         """
         Compute training losses for pose sequences using 3D coordinates.
         This function diffuses the target pose, passes the noisy pose to the model, and computes losses based on:
@@ -67,8 +69,8 @@ class PoseGaussianDiffusion(GaussianDiffusion):
 
         # Retrieve the mask from model_kwargs (if provided)
         mask = None
-        if model_kwargs is not None and 'mask' in model_kwargs:
-            mask = model_kwargs['mask']  # shape: (B, T, 1, keypoints, 3)
+        if model_kwargs is not None and "mask" in model_kwargs:
+            mask = model_kwargs["mask"]  # shape: (B, T, 1, keypoints, 3)
             mask = mask.squeeze(2)  # (B, T, keypoints, 3)
             if mask.size(-1) == 3:
                 mask = mask.mean(dim=-1)  # now (B, T, keypoints)
@@ -85,7 +87,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
                 x_t=pose_noisy,
                 t=t,
                 clip_denoised=False,
-                model_kwargs=model_kwargs
+                model_kwargs=model_kwargs,
             )["output"]
             if self.loss_type == LossType.RESCALED_KL:
                 loss_terms["loss"] *= self.num_timesteps
@@ -93,10 +95,16 @@ class PoseGaussianDiffusion(GaussianDiffusion):
         elif self.loss_type in (LossType.MSE, LossType.RESCALED_MSE):
             # Compute model output; expected shape: (B, T, keypoints, 3)
             model_output = model(pose_noisy, self._scale_timesteps(t), model_kwargs)
-            if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
+            if self.model_var_type in [
+                ModelVarType.LEARNED,
+                ModelVarType.LEARNED_RANGE,
+            ]:
                 B, C = pose_noisy.shape[:2]
-                assert model_output.shape == (B, C * 2, *pose_noisy.shape[2:]), \
-                    f"Unexpected model output shape: {model_output.shape}"
+                assert model_output.shape == (
+                    B,
+                    C * 2,
+                    *pose_noisy.shape[2:],
+                ), f"Unexpected model output shape: {model_output.shape}"
                 model_output, model_var_values = th.split(model_output, C, dim=1)
                 frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
                 loss_terms["vb"] = self._vb_terms_bpd(
@@ -105,13 +113,15 @@ class PoseGaussianDiffusion(GaussianDiffusion):
                     x_t=pose_noisy,
                     t=t,
                     clip_denoised=False,
-                    model_kwargs=model_kwargs
+                    model_kwargs=model_kwargs,
                 )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
                     loss_terms["vb"] *= self.num_timesteps / 1000.0
 
             target = {
-                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(x_start=pose_target, x_t=pose_noisy, t=t)[0],
+                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+                    x_start=pose_target, x_t=pose_noisy, t=t
+                )[0],
                 ModelMeanType.START_X: pose_target,
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]
@@ -125,7 +135,9 @@ class PoseGaussianDiffusion(GaussianDiffusion):
             loss_terms["output"] = model_output
 
             if config.trainer.use_loss_mse:
-                loss_terms['loss_mse'] = self.masked_l2(model_output.unsqueeze(1), pose_target.unsqueeze(1), mask)
+                loss_terms["loss_mse"] = self.masked_l2(
+                    model_output.unsqueeze(1), pose_target.unsqueeze(1), mask
+                )
 
             if config.trainer.use_loss_3d:
                 # Direct 3D loss between predicted and target poses
@@ -140,14 +152,16 @@ class PoseGaussianDiffusion(GaussianDiffusion):
                     mask_vel = mask[:, :, 1:]
                 else:
                     mask_vel = None
-                loss_terms["loss_vel"] = self.masked_l2(pred_velocity, target_velocity, mask_vel)
+                loss_terms["loss_vel"] = self.masked_l2(
+                    pred_velocity, target_velocity, mask_vel
+                )
 
             # Aggregate total loss using lambda factors
             loss_terms["loss"] = (
                 loss_terms["loss_mse"]
-                + loss_terms.get('vb', 0.)
-                + (self.lambda_3d * loss_terms.get('loss_3d', 0.))
-                + (self.lambda_vel * loss_terms.get('loss_vel', 0.))
+                + loss_terms.get("vb", 0.0)
+                + (self.lambda_3d * loss_terms.get("loss_3d", 0.0))
+                + (self.lambda_vel * loss_terms.get("loss_vel", 0.0))
             )
         else:
             raise NotImplementedError(self.loss_type)
