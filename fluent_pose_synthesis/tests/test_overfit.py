@@ -252,7 +252,6 @@ def compute_average_keypoint_error(pose1, pose2):
     diff = torch.norm(pose1 - pose2, dim=-1)  # [B, T, K]
     return diff.mean().item()  # scalar
 
-
 def compute_cosine_distance(pose1, pose2):
     """
     Computes cosine distance between flattened pose vectors.
@@ -260,7 +259,7 @@ def compute_cosine_distance(pose1, pose2):
     """
     v1 = pose1.flatten()
     v2 = pose2.flatten()
-    cos = F.cosine_similarity(v1, v2, dim=0)
+    cos = F.cosine_similarity(v1, v2, dim=0)    # pylint: disable=not-callable
     return 1 - cos.item()
 
 
