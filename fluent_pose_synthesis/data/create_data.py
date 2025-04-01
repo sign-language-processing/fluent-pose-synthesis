@@ -28,7 +28,8 @@ from fluent_pose_synthesis.data.map_gloss_to_pose import create_gloss_to_pose_di
 # --output_dir /scratch/ronli/output --max_examples 6
 
 
-@dataclass  # pylint: disable=too-few-public-methods
+# pylint: disable=too-few-public-methods
+@dataclass
 class ProcessedSentence:
     concatenated_original_pose: Pose
     concatenated_updated_pose: Pose
@@ -87,7 +88,7 @@ class DGSPoseDataset:
         )
         dgs_types = tfds.load(
             "dgs_types",
-            builder_kwargs=dict(config=config),
+            builder_kwargs={"config": config},
             data_dir=self.dictionary_dir,
         )
         dgs_types_dict, _ = create_gloss_to_pose_dict(dgs_types)
@@ -119,6 +120,7 @@ class DGSPoseDataset:
             f"sign_language_datasets.datasets.{dataset_name}.{dataset_name}"
         )
         # Read the pose header from the dataset's predefined file
+        # pylint: disable=protected-access
         with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
             pose_header = PoseHeader.read(BufferReader(buffer.read()))
 

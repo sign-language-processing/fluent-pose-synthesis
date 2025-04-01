@@ -109,7 +109,7 @@ class PoseGaussianDiffusion(GaussianDiffusion):
                     time * 2,
                     *pose_noisy.shape[2:],
                 ), f"Unexpected model output shape: {model_output.shape}"
-                model_output, model_var_values = th.split(model_output, C, dim=1)
+                model_output, model_var_values = th.split(model_output, time, dim=1)
                 frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
                 loss_terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
