@@ -60,6 +60,21 @@ class SignLanguagePoseDataset(Dataset):
 
         print(f"Dataset initialized with {len(self.examples)} samples. Split: {split}")
 
+        # Initialize pose_header from the first fluent .pose file
+        if self.examples:
+            first_fluent_path = self.examples[0]["fluent_path"]
+            try:
+                with open(first_fluent_path, "rb") as f:
+                    first_pose = Pose.read(f.read())
+                    self.pose_header = first_pose.header
+            except Exception as e:
+                print(
+                    f"[WARNING] Failed to read pose_header from {first_fluent_path}: {e}"
+                )
+                self.pose_header = None
+        else:
+            self.pose_header = None
+
     def __len__(self) -> int:
         """
         Returns the number of samples in the dataset.

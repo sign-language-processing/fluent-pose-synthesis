@@ -2,9 +2,12 @@ import sys
 import time
 import shutil
 import argparse
-from pathlib import Path
+from pathlib import Path, PosixPath
+from types import SimpleNamespace
 
+import numpy as np
 import torch
+import torch.serialization
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from pose_format.torch.masked.collator import zero_pad_collator
@@ -20,6 +23,26 @@ from fluent_pose_synthesis.config.option import (
     add_diffusion_args,
     config_parse,
 )
+
+# Add custom globals to torch.serialization
+torch.serialization.add_safe_globals(
+    [
+        SimpleNamespace,
+        PosixPath,
+        np.int64,
+        np.int32,
+        np.float64,
+        np.float32,
+        np.bool_,
+    ]
+)
+# Patch torch.load to avoid loading weights only
+# This is a workaround for the issue where torch.load tries to load weights only
+_original_torch_load = torch.load
+def patched_torch_load(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _original_torch_load(*args, **kwargs)
+torch.load = patched_torch_load
 
 
 def train(

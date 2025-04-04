@@ -100,7 +100,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             x_t_for_model = x_t.unsqueeze(2)
             model_output = self.model.interface(
                 x_t_for_model, self.diffusion._scale_timesteps(t), cond
-            )   # pylint: disable=protected-access
+            )  # pylint: disable=protected-access
             model_output_perm = model_output.permute(0, 2, 3, 1)
 
             loss_terms = {}
@@ -230,11 +230,17 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
         # Get a single batch of data and the header
         datas = next(iter(patched_dataloader))
-        dataset = patched_dataloader.dataset
+
+        def get_original_dataset(dataset):
+            while isinstance(dataset, torch.utils.data.Subset):
+                dataset = dataset.dataset
+            return dataset
+
+        dataset = get_original_dataset(patched_dataloader.dataset)
         self.pose_header = dataset.pose_header
 
         # Use the original Ground Truth data (unnormalized)
-        fluent_clip = datas["original_data"].to(self.device)
+        fluent_clip = datas["data"].to(self.device)
 
         cond = {
             key: (val.to(self.device) if torch.is_tensor(val) else val)
