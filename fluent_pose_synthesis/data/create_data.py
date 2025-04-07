@@ -20,12 +20,15 @@ from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.reader import BufferReader
 from spoken_to_signed.gloss_to_pose import concatenate_poses
 
-from map_gloss_to_pose import create_gloss_to_pose_dict
+from fluent_pose_synthesis.data.map_gloss_to_pose import create_gloss_to_pose_dict
+
 
 # Example call:
-# python create_data.py --corpus_dir /scratch/ronli --dictionary_dir /scratch/ronli --output_dir /scratch/ronli/output --max_examples 6
+# python create_data.py --corpus_dir /scratch/ronli --dictionary_dir /scratch/ronli
+# --output_dir /scratch/ronli/output --max_examples 6
 
 
+# pylint: disable=too-few-public-methods
 @dataclass
 class ProcessedSentence:
     concatenated_original_pose: Pose
@@ -36,7 +39,9 @@ class ProcessedSentence:
 
 
 class DGSPoseDataset:
-    def __init__(self, corpus_dir: Path, dictionary_dir: Path, max_examples: Optional[int] = None):
+    def __init__(
+        self, corpus_dir: Path, dictionary_dir: Path, max_examples: Optional[int] = None
+    ):
         """
         Initializes the DGSPoseDataset class.
         Args:
@@ -60,14 +65,16 @@ class DGSPoseDataset:
             include_pose="holistic",
             data_type="sentence",
             fps=25,  # Specify FPS as 25 for pose data
-            split="3.0.0-uzh-sentence"  # Use the sentence-level split
+            split="3.0.0-uzh-sentence",  # Use the sentence-level split
         )
-        dgs_corpus = tfds.load('dgs_corpus',
-                                builder_kwargs={"config": config_corpus},
-                                data_dir=self.corpus_dir)
+        dgs_corpus = tfds.load(
+            "dgs_corpus",
+            builder_kwargs={"config": config_corpus},
+            data_dir=self.corpus_dir,
+        )
 
         return dgs_corpus
-        
+
     def _load_dgs_types_dictionary(self) -> Dict[str, Dict[str, Any]]:
         """
         Loads the DGS Types dataset and creates a gloss-to-pose dictionary.
@@ -77,13 +84,15 @@ class DGSPoseDataset:
             version="3.0.0",
             include_video=False,
             include_pose="holistic",
-            process_pose=False
+            process_pose=False,
         )
-        dgs_types = tfds.load('dgs_types', 
-                              builder_kwargs=dict(config=config), 
-                              data_dir=self.dictionary_dir)
+        dgs_types = tfds.load(
+            "dgs_types",
+            builder_kwargs={"config": config},
+            data_dir=self.dictionary_dir,
+        )
         dgs_types_dict, _ = create_gloss_to_pose_dict(dgs_types)
-        
+
         return dgs_types_dict
 
     def _should_replace(self, gloss: str) -> bool:
@@ -92,8 +101,13 @@ class DGSPoseDataset:
         Args:
             gloss (str): The gloss to check.
         """
-        # Check if a given gloss is in DGS types dictionary and has a corresponding pose, and is not a special generic sign
-        return not gloss.startswith('$') and gloss in self.dictionary and self.dictionary[gloss]['views']['pose'] is not None
+        # Check if a given gloss is in DGS types dictionary and has a corresponding pose,
+        # and is not a special generic sign
+        return (
+            not gloss.startswith("$")
+            and gloss in self.dictionary
+            and self.dictionary[gloss]["views"]["pose"] is not None
+        )
 
     @lru_cache(maxsize=None)
     def _get_pose_header(self, dataset_name: str) -> PoseHeader:
@@ -102,14 +116,19 @@ class DGSPoseDataset:
         Args:
             dataset_name (str): Name of the dataset (e.g., "dgs_corpus").
         """
-        dataset_module = importlib.import_module(f"sign_language_datasets.datasets.{dataset_name}.{dataset_name}")
+        dataset_module = importlib.import_module(
+            f"sign_language_datasets.datasets.{dataset_name}.{dataset_name}"
+        )
         # Read the pose header from the dataset's predefined file
+        # pylint: disable=protected-access
         with open(dataset_module._POSE_HEADERS["holistic"], "rb") as buffer:
             pose_header = PoseHeader.read(BufferReader(buffer.read()))
-        
+
         return pose_header
 
-    def _create_pose_object(self, pose_datum: Dict[str, Any], dataset_name: str) -> Pose:
+    def _create_pose_object(
+        self, pose_datum: Dict[str, Any], dataset_name: str
+    ) -> Pose:
         """
         Creates a Pose object from the given pose data_entry and dataset name.
         Args:
@@ -123,7 +142,7 @@ class DGSPoseDataset:
         pose_data = pose_datum["data"].numpy()
         conf = pose_datum["conf"].numpy()
         pose_body = NumPyPoseBody(fps, pose_data, conf)
-        
+
         return Pose(pose_header, pose_body)
 
     def _process_sentence(self, data_entry: Dict[str, Any]) -> ProcessedSentence:
@@ -131,20 +150,19 @@ class DGSPoseDataset:
         Processes a single sentence entry from the DGS Corpus.
         Args:
             data_entry (Dict[str, Any]): A single sentence entry from the DGS Corpus.
-        """ 
+        """
         original_poses_sequence = []
         updated_poses_sequence = []
-       
+
         # Sentence data
-        sentence = data_entry['sentence']
-        sentence_start_time = sentence['start'].numpy()
-        sentence_end_time = sentence['end'].numpy()
+        sentence = data_entry["sentence"]
+        sentence_start_time = sentence["start"].numpy()
         # Gloss data
-        glosses = sentence['glosses']['gloss'].numpy()
-        gloss_start_times = sentence['glosses']['start'].numpy()
-        gloss_end_times = sentence['glosses']['end'].numpy()
+        glosses = sentence["glosses"]["gloss"].numpy()
+        gloss_start_times = sentence["glosses"]["start"].numpy()
+        gloss_end_times = sentence["glosses"]["end"].numpy()
         # Pose data
-        pose_datum = data_entry['pose']
+        pose_datum = data_entry["pose"]
         pose = self._create_pose_object(pose_datum, "dgs_corpus")
         pose_body = pose.body
         fps = pose_body.fps
@@ -152,26 +170,31 @@ class DGSPoseDataset:
 
         # Construct metadata dictionary
         metadata = {
-            "document_id": data_entry['document_id'].numpy().decode('utf-8'),
-            "id": data_entry['id'].numpy().decode('utf-8'),
+            "document_id": data_entry["document_id"].numpy().decode("utf-8"),
+            "id": data_entry["id"].numpy().decode("utf-8"),
             "sentence": {
-                "id": data_entry['sentence']['id'].numpy().decode('utf-8'),
-                "start": data_entry['sentence']['start'].numpy(),
-                "end": data_entry['sentence']['end'].numpy(),
-                "english": data_entry['sentence']['english'].numpy().decode('utf-8'),
-                "german": data_entry['sentence']['german'].numpy().decode('utf-8'),
+                "id": data_entry["sentence"]["id"].numpy().decode("utf-8"),
+                "start": data_entry["sentence"]["start"].numpy(),
+                "end": data_entry["sentence"]["end"].numpy(),
+                "english": data_entry["sentence"]["english"].numpy().decode("utf-8"),
+                "german": data_entry["sentence"]["german"].numpy().decode("utf-8"),
                 "glosses": {
-                    "gloss": [g.decode('utf-8') for g in data_entry['sentence']['glosses']['gloss'].numpy()],
-                    "start": data_entry['sentence']['glosses']['start'].numpy().tolist(),
-                    "end": data_entry['sentence']['glosses']['end'].numpy().tolist(),
+                    "gloss": [
+                        g.decode("utf-8")
+                        for g in data_entry["sentence"]["glosses"]["gloss"].numpy()
+                    ],
+                    "start": data_entry["sentence"]["glosses"]["start"]
+                    .numpy()
+                    .tolist(),
+                    "end": data_entry["sentence"]["glosses"]["end"].numpy().tolist(),
                 },
-            }
+            },
         }
 
         valid_gloss_count = 0
         replaced_gloss_count = 0
         for gloss, start, end in zip(glosses, gloss_start_times, gloss_end_times):
-            gloss = gloss.decode('utf-8')
+            gloss = gloss.decode("utf-8")
             start_frame = math.floor(start / 1000 * fps)
             end_frame = math.ceil(end / 1000 * fps)
             # Adjust gloss frame range relative to the sentence's start frame
@@ -186,7 +209,9 @@ class DGSPoseDataset:
             valid_gloss_count += 1
 
             # Extract original pose for current gloss
-            original_pose_body = pose_body.select_frames(range(relative_start_frame, relative_end_frame))
+            original_pose_body = pose_body.select_frames(
+                range(relative_start_frame, relative_end_frame)
+            )
             original_pose_header = self._get_pose_header("dgs_corpus")
             original_pose = Pose(original_pose_header, original_pose_body)
             original_poses_sequence.append(original_pose)
@@ -194,7 +219,7 @@ class DGSPoseDataset:
             # Determine if the gloss should be replaced
             if self._should_replace(gloss):
                 replaced_gloss_count += 1
-                types_gloss_pose_path = self.dictionary[gloss]['views']['pose']
+                types_gloss_pose_path = self.dictionary[gloss]["views"]["pose"]
                 with open(types_gloss_pose_path, "rb") as f:
                     types_gloss_pose = Pose.read(f.read())
                     updated_pose = types_gloss_pose
@@ -204,23 +229,30 @@ class DGSPoseDataset:
 
         # Ensure non-empty pose sequences
         if not original_poses_sequence or not updated_poses_sequence:
-            logging.warning(f"Skipping sentence {metadata['id']} due to empty pose sequences.")
+            logging.warning(
+                "Skipping sentence %s due to empty pose sequences.", metadata["id"]
+            )
             return None
-        
+
         # Concatenate poses
         concatenated_original_pose = concatenate_poses(original_poses_sequence)
         concatenated_updated_pose = concatenate_poses(updated_poses_sequence)
 
-        assert concatenated_updated_pose.body.fps == concatenated_original_pose.body.fps, \
-            f"FPS mismatch: Original FPS = {concatenated_original_pose.body.fps}, Updated FPS = {concatenated_updated_pose.body.fps}. Ensure FPS is consistent during loading."
+        assert (
+            concatenated_updated_pose.body.fps == concatenated_original_pose.body.fps
+        ), (
+            f"FPS mismatch: Original FPS = {concatenated_original_pose.body.fps}, "
+            f"Updated FPS = {concatenated_updated_pose.body.fps}. "
+            "Ensure FPS is consistent during loading."
+        )
 
         return ProcessedSentence(
-                concatenated_original_pose=concatenated_original_pose,
-                concatenated_updated_pose=concatenated_updated_pose,
-                metadata=metadata,
-                valid_gloss_count=valid_gloss_count,
-                replaced_gloss_count=replaced_gloss_count
-            )
+            concatenated_original_pose=concatenated_original_pose,
+            concatenated_updated_pose=concatenated_updated_pose,
+            metadata=metadata,
+            valid_gloss_count=valid_gloss_count,
+            replaced_gloss_count=replaced_gloss_count,
+        )
 
     def generate_dataset(self, split: str, global_counter: Dict[str, int]):
         """
@@ -230,14 +262,17 @@ class DGSPoseDataset:
             global_counter (Dict[str, int]): A dictionary to track the total processed examples globally.
         Yields:
             ProcessedSentence: The processed sentence data for each entry.
-        """        
+        """
         dgs_corpus = self._load_dgs_corpus()
         total_signs = 0
         replaced_signs = 0
         try:
-            for idx, data_entry in enumerate(dgs_corpus[split]):
+            for _, data_entry in enumerate(dgs_corpus[split]):
                 # Limit the number of examples to process
-                if self.max_examples and global_counter["processed"] >= self.max_examples:
+                if (
+                    self.max_examples
+                    and global_counter["processed"] >= self.max_examples
+                ):
                     break
                 # Process each sentence entry
                 processed_sentence = self._process_sentence(data_entry)
@@ -247,10 +282,12 @@ class DGSPoseDataset:
                 total_signs += processed_sentence.valid_gloss_count
                 replaced_signs += processed_sentence.replaced_gloss_count
                 global_counter["processed"] += 1
-                print(f"Processed {global_counter['processed']}/{self.max_examples or 'all'} sentences in total. "
-                    f"Current split: {split}. Sentence ID: {processed_sentence.metadata['id']}")
+                print(
+                    f"Processed {global_counter['processed']}/{self.max_examples or 'all'} sentences in total. "
+                    f"Current split: {split}. Sentence ID: {processed_sentence.metadata['id']}"
+                )
                 yield processed_sentence
-        finally:  
+        finally:
             print(f"Processing complete for split: {split}.")
             print(f"Total signs: {total_signs}")
             print(f"Replaced signs: {replaced_signs}")
@@ -273,13 +310,13 @@ def convert_numpy_types(obj):
     """
     if isinstance(obj, np.integer):
         return int(obj)
-    elif isinstance(obj, np.floating):
+    if isinstance(obj, np.floating):
         return float(obj)
-    elif isinstance(obj, np.ndarray):
+    if isinstance(obj, np.ndarray):
         return obj.tolist()
-    elif isinstance(obj, dict):
+    if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
+    if isinstance(obj, list):
         return [convert_numpy_types(v) for v in obj]
     return obj
 
@@ -296,7 +333,7 @@ def save_metadata_to_file(metadata: Dict[str, Any], file_path: Path):
         json.dump(metadata, file, indent=4, ensure_ascii=False)
 
 
-def setup_logging(output_dir: Path, log_filename: str="processing.log") -> Path:
+def setup_logging(output_dir: Path, log_filename: str = "processing.log") -> Path:
     """Setup logging configuration."""
     log_file_path = Path(output_dir) / log_filename
     logger = logging.getLogger()
@@ -304,36 +341,62 @@ def setup_logging(output_dir: Path, log_filename: str="processing.log") -> Path:
     logger.setLevel(logging.INFO)
 
     file_handler = logging.FileHandler(log_file_path)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(file_handler)
 
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    console_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(console_handler)
-    
+
     return log_file_path
 
 
 def main():
     parser = argparse.ArgumentParser(description="Process and save pose dataset.")
-    parser.add_argument("--corpus_dir", type=str, required=True, help="Path to the DGS Corpus directory. If the dataset is not downloaded, it will be downloaded to this directory.")
-    parser.add_argument("--dictionary_dir", type=str, required=True, help="Path to the DGS Types dictionary directory. If the dataset is not downloaded, it will be downloaded to this directory.")
-    parser.add_argument("--output_dir", type=str, required=True, help="Output directory to save processed pose files.")
-    parser.add_argument("--max_examples", type=int, default=None, help="Maximum number of examples to process.")
+    parser.add_argument(
+        "--corpus_dir",
+        type=str,
+        required=True,
+        help="Path to the DGS Corpus directory. If the dataset is not downloaded, "
+        "it will be downloaded to this directory.",
+    )
+    parser.add_argument(
+        "--dictionary_dir",
+        type=str,
+        required=True,
+        help="Path to the DGS Types dictionary directory. If the dataset is not downloaded, "
+        "it will be downloaded to this directory.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="Output directory to save processed pose files.",
+    )
+    parser.add_argument(
+        "--max_examples",
+        type=int,
+        default=None,
+        help="Maximum number of examples to process.",
+    )
     args = parser.parse_args()
 
     # Initialize the DGSDataset class
     dgs_pose_dataset = DGSPoseDataset(
         corpus_dir=Path(args.corpus_dir),
         dictionary_dir=Path(args.dictionary_dir),
-        max_examples=args.max_examples
+        max_examples=args.max_examples,
     )
     # Ensure output directory exists
     output_path = Path(args.output_dir)
     os.makedirs(output_path, exist_ok=True)
     # Setup logging
     log_file_path = setup_logging(output_path)
-    logging.info(f"Logging to file: {log_file_path}")
+    logging.info("Logging to file: %s", log_file_path)
     # Global counter to track total processed examples
     global_counter = {"processed": 0}
 
@@ -341,29 +404,41 @@ def main():
     for split in ["train", "validation", "test"]:
         split_output_path = output_path / split
         os.makedirs(split_output_path, exist_ok=True)
-        logging.info(f"Starting processing for split: {split}")
+        logging.info("Starting processing for split: %s", split)
         # Process and save the dataset
-        for idx, processed_sentence in enumerate(dgs_pose_dataset.generate_dataset(split=split, global_counter=global_counter)):
+        for idx, processed_sentence in enumerate(
+            dgs_pose_dataset.generate_dataset(
+                split=split, global_counter=global_counter
+            )
+        ):
             # Save original pose
             original_pose_path = split_output_path / f"{split}_{idx + 1}_original.pose"
-            save_pose_to_file(processed_sentence.concatenated_original_pose, original_pose_path)
+            save_pose_to_file(
+                processed_sentence.concatenated_original_pose, original_pose_path
+            )
             # Save updated pose
             updated_pose_path = split_output_path / f"{split}_{idx + 1}_updated.pose"
-            save_pose_to_file(processed_sentence.concatenated_updated_pose, updated_pose_path)
+            save_pose_to_file(
+                processed_sentence.concatenated_updated_pose, updated_pose_path
+            )
             # Save metadata
             metadata_path = split_output_path / f"{split}_{idx + 1}_metadata.json"
             save_metadata_to_file(processed_sentence.metadata, metadata_path)
-            
+
             # Log processing information
-            logging.info(f"Processed sentence {idx + 1}: {processed_sentence.metadata['id']}")
-            logging.info(f"Original pose saved to: {original_pose_path}")
-            logging.info(f"Updated pose saved to: {updated_pose_path}")
-            logging.info(f"Metadata saved to: {metadata_path}")
+            logging.info(
+                "Processed sentence %d: %s", idx + 1, processed_sentence.metadata["id"]
+            )
+            logging.info("Original pose saved to: %s", original_pose_path)
+            logging.info("Updated pose saved to: %s", updated_pose_path)
+            logging.info("Metadata saved to: %s", metadata_path)
+
             valid_gloss_count = processed_sentence.valid_gloss_count
             replaced_gloss_count = processed_sentence.replaced_gloss_count
-            logging.info(f"Valid gloss count: {valid_gloss_count}")
-            logging.info(f"Replaced gloss count: {replaced_gloss_count}")
-            logging.info(f"Metadata: {processed_sentence.metadata}\n")
+
+            logging.info("Valid gloss count: %d", valid_gloss_count)
+            logging.info("Replaced gloss count: %d", replaced_gloss_count)
+            logging.info("Metadata: %s", processed_sentence.metadata)
 
             # Break if maximum examples is reached
             if args.max_examples and global_counter["processed"] >= args.max_examples:
