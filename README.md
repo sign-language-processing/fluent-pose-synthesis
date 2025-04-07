@@ -9,11 +9,65 @@ It deals with correcting the prosody and intonation.
 pip install git+https://github.com/sign-language-processing/fluent-pose-synthesis
 ```
 
-To make an unfluent pose sequence into a fluent pose sequence:
+
+### 1. Environment Setup
+
+We recommend using `conda` for managing dependencies.
 
 ```bash
-fluent_pose_synthesis --input="unfluent.pose" --output="fluent.pose"
+# Clone the repository
+pip install git+https://github.com/sign-language-processing/fluent-pose-synthesis
+cd fluent-pose-synthesis
+
+# Create and activate environment
+conda env create -f environment.yml
+conda activate fluent-pose
 ```
+
+### 2. Dataset Download and Preparation
+
+We use the DGS Corpus (sentence-level pose data) and DGS Types Dictionary for gloss-level replacement.
+
+```bash
+python fluent_pose_synthesis/data/create_data.py \
+  --corpus_dir pose_data/tfds_dgs \
+  --dictionary_dir pose_data/tfds_dgs \
+  --output_dir pose_data/output
+```
+
+This will create a structure like:
+
+```
+pose_data/
+├── tfds_dgs/             # tfds cache
+└── output/
+    ├── train/
+    │   ├── train_1_original.pose
+    │   ├── train_1_updated.pose
+    │   ├── train_1_metadata.json
+    ├── validation/
+    └── test/
+```
+
+
+### 3. Debug Model Training
+
+To quickly test if everything works:
+
+```bash
+python fluent_pose_synthesis/train.py \
+  --name debug \
+  --data pose_data/output \
+  --save save/debug_run
+```
+
+This will:
+- Load only 16 training examples
+- Use batch size = 16
+- Train for 100 epochs
+- Save logs and checkpoints under `save/debug_run`
+
+
 
 ## Explanation
 

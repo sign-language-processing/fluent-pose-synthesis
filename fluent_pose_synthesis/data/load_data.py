@@ -98,29 +98,33 @@ class SignLanguagePoseDataset(Dataset):
         with open(sample["metadata_path"], "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
+        # Save unnormalized pose data
+        unnormalized_fluent = fluent_pose.body.data.astype(self.dtype)
+        unnormalized_disfluent = disfluent_pose.body.data.astype(self.dtype)
+
+        # Apply in-place normalization
+        fluent_pose.normalize()
+        disfluent_pose.normalize()
+
+        fluent_data = fluent_pose.body.data.astype(self.dtype)
         # Use the entire disfluent sequence as condition
         disfluent_seq = disfluent_pose.body.data.astype(self.dtype)
         disfluent_mask = disfluent_pose.body.mask
 
-        fluent_data = fluent_pose.body.data.astype(self.dtype)
         fluent_length = len(fluent_data)
-
         # Dynamic windowing: randomly select a window of length fluent_frames
         if fluent_length > self.fluent_frames:
-            valid_windows = []
-            for start in range(0, fluent_length - self.fluent_frames + 1):
-                window = fluent_data[start : start + self.fluent_frames]
-                if np.any(window != 0):
-                    valid_windows.append(start)
-
-            if valid_windows:
-                start = np.random.choice(valid_windows)
-            else:
-                start = 0  # fallback: no valid window found
-
+            valid_windows = [
+                start
+                for start in range(0, fluent_length - self.fluent_frames + 1)
+                if np.any(fluent_data[start : start + self.fluent_frames] != 0)
+            ]
+            start = np.random.choice(valid_windows) if valid_windows else 0
             fluent_clip = fluent_data[start : start + self.fluent_frames]
+            unnormalized_clip = unnormalized_fluent[start : start + self.fluent_frames]
         else:
             fluent_clip = fluent_data  # Will be padded later using collator
+            unnormalized_clip = unnormalized_fluent
 
         # Frame-level mask generation
         target_mask = np.any(fluent_clip != 0, axis=(1, 2, 3))  # shape: [T]
@@ -141,6 +145,12 @@ class SignLanguagePoseDataset(Dataset):
                 ),  # Per-frame valid mask
                 "metadata": metadata,
             },
+            "unnormalized_data": torch.tensor(
+                unnormalized_clip, dtype=torch.float32
+            ),  # Unnormalized fluent target clip
+            "unnormalized_input_sequence": torch.tensor(
+                unnormalized_disfluent, dtype=torch.float32
+            ),  # Unnormalized full disfluent input
         }
 
 
@@ -175,12 +185,13 @@ def example_dataset():
     if display_batch_info:
         # Display shapes of a batch for debugging purposes
         batch = next(iter(dataloader))
-        # Fluent (target) clip shape
-        print("Target clip shape:", batch["data"].shape)
-        # Disfluent (condition) sequence shape
-        print("Input clip shape:", batch["conditions"]["input_sequence"].shape)
-        print("Input mask shape:", batch["conditions"]["input_mask"].shape)
-        print("Target mask shape:", batch["conditions"]["target_mask"].shape)
+        print("Batch size:", len(batch))
+        print("Normalized target clip:", batch["data"].shape)
+        print("Unnormalized target clip:", batch["unnormalized_data"].shape)
+        print("Input sequence:", batch["conditions"]["input_sequence"].shape)
+        print("Input mask:", batch["conditions"]["input_mask"].shape)
+        print("Target mask:", batch["conditions"]["target_mask"].shape)
+        print("Unnormalized input sequence:", batch["unnormalized_input_sequence"].shape)
 
     if measure_loading_time:
         loading_times = []

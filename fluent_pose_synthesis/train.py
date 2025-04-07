@@ -168,8 +168,9 @@ def main():
     # Debug mode settings
     if "debug" in args.name:
         config.trainer.workers = 1
-        config.trainer.load_num = 4
-        config.trainer.batch_size = 4
+        config.trainer.load_num = 16
+        config.trainer.batch_size = 16
+        config.trainer.epoch = 100
 
     # Handle existing folder
     if (
