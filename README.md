@@ -50,7 +50,7 @@ pose_data/
 To quickly test if everything works:
 
 ```bash
-python fluent_pose_synthesis/train.py \
+python -m fluent_pose_synthesis.train \
   --name debug \
   --data assets/sample_dataset \
   --save save/debug_run
