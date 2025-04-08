@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
+from pose_format.utils.generic import normalize_pose_size
 
 from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
@@ -252,8 +253,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pose_obj = Pose(self.pose_header, pose_body)
 
             # Normalize for visualization
-            pose_obj.normalize(scale_factor=70)
-            pose_obj.focus()
+            normalize_pose_size(pose_obj)
 
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:
