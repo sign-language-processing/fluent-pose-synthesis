@@ -1,0 +1,43 @@
+{
+    "document_id": "2021499",
+    "id": "2021499_a2600546",
+    "sentence": {
+        "id": "a2600546",
+        "start": 278940,
+        "end": 281560,
+        "english": "Everyone's staring fascinated at the fire; it looked like a grill.",
+        "german": "Alle betrachteten fasziniert das Feuer, es war wie auf einem Grill.",
+        "glosses": {
+            "gloss": [
+                "SCHAUEN2",
+                "FASZINIEREND2",
+                "WIE4A*",
+                "FEUER1A",
+                "FASZINIEREND2",
+                "WIE4A*",
+                "GRILLEN1B",
+                "SCHAUEN1"
+            ],
+            "start": [
+                279040,
+                279460,
+                279680,
+                279820,
+                280280,
+                280560,
+                280800,
+                281220
+            ],
+            "end": [
+                279200,
+                279600,
+                279760,
+                280100,
+                280480,
+                280660,
+                281060,
+                281460
+            ]
+        }
+    }
+}

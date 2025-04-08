@@ -1,0 +1,40 @@
+{
+    "document_id": "1419265",
+    "id": "1419265_a2972042",
+    "sentence": {
+        "id": "a2972042",
+        "start": 202800,
+        "end": 205240,
+        "english": "The relationship is completely normal, though.",
+        "german": "Die Beziehung ist aber ganz normal.",
+        "glosses": {
+            "gloss": [
+                "ABER1*",
+                "BEIDE1*",
+                "ZUSAMMEN-PERSON1",
+                "$GEST^",
+                "BEZIEHUNG3*",
+                "NORMAL1",
+                "SO1A"
+            ],
+            "start": [
+                203080,
+                203260,
+                203720,
+                204060,
+                204280,
+                204720,
+                205100
+            ],
+            "end": [
+                203180,
+                203580,
+                203940,
+                204100,
+                204540,
+                205000,
+                205240
+            ]
+        }
+    }
+}

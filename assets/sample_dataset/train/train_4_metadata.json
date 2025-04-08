@@ -1,0 +1,28 @@
+{
+    "document_id": "1687803-10331315-10464419",
+    "id": "1687803-10331315-10464419_a2002159",
+    "sentence": {
+        "id": "a2002159",
+        "start": 672840,
+        "end": 674180,
+        "english": "The practical part wasn't so good.",
+        "german": "In der Praxis war ich nicht so gut.",
+        "glosses": {
+            "gloss": [
+                "PRAXIS1",
+                "ICH2",
+                "$GEST-OFF^*"
+            ],
+            "start": [
+                673000,
+                673620,
+                673780
+            ],
+            "end": [
+                673340,
+                673640,
+                674180
+            ]
+        }
+    }
+}

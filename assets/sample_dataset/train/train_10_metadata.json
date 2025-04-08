@@ -1,0 +1,40 @@
+{
+    "document_id": "1211515",
+    "id": "1211515_a3247217",
+    "sentence": {
+        "id": "a3247217",
+        "start": 345600,
+        "end": 348020,
+        "english": "I couldn‘t find a job immediately.",
+        "german": "Ich hatte dann nicht sofort einen Beruf gefunden.",
+        "glosses": {
+            "gloss": [
+                "ICH1",
+                "BERUF6*",
+                "ICH2*",
+                "SOFORT2B",
+                "BEKOMMEN3*",
+                "ICH2",
+                "NEIN1A"
+            ],
+            "start": [
+                345640,
+                346040,
+                346220,
+                346460,
+                346720,
+                347040,
+                347380
+            ],
+            "end": [
+                345780,
+                346160,
+                346320,
+                346620,
+                346900,
+                347220,
+                347860
+            ]
+        }
+    }
+}
