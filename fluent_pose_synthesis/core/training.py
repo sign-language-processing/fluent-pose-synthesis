@@ -10,13 +10,13 @@ from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.generic import normalize_pose_size
 
-from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
+from CAMDM.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
     LossType,
     ModelVarType,
 )
-from CAMDM.PyTorch.network.training import BaseTrainingPortal
-from CAMDM.PyTorch.utils.common import mkdir
+from CAMDM.network.training import BaseTrainingPortal
+from CAMDM.utils.common import mkdir
 
 
 class PoseTrainingPortal(BaseTrainingPortal):

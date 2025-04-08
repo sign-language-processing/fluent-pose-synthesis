@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any
 import torch as th
 
-from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
+from CAMDM.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
     get_named_beta_schedule,
     LossType,

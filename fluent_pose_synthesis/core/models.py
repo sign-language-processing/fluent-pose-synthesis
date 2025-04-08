@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn  # pylint: disable=consider-using-from-import
 
 
-from CAMDM.PyTorch.network.models import (
+from CAMDM.network.models import (
     PositionalEncoding,
     TimestepEmbedder,
     OutputProcess,

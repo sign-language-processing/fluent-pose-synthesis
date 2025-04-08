@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
-from CAMDM.PyTorch.diffusion.create_diffusion import create_gaussian_diffusion
+from CAMDM.diffusion.create_diffusion import create_gaussian_diffusion
 
 
 class DummyDataset(Dataset):

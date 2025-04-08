@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-        with:
-          submodules: true
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -23,12 +21,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install .[dev]
-          pip install torch
-
-      - name: Set PYTHONPATH
-        run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
+        run: pip install .[dev]
 
       - name: Run Pylint
         run: pylint fluent_pose_synthesis

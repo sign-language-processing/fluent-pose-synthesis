@@ -15,30 +15,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-          fetch-depth: 0
 
-      - name: Initialize Git submodules
-        run: git submodule update --init --recursive
-          
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Compatible NumPy
-        run: pip install numpy==1.24.4
-
       - name: Install Requirements
         run: pip install .[dev]
 
-      - name: Set PYTHONPATH for project and CAMDM
-        run: echo "PYTHONPATH=$(pwd):$(pwd)/CAMDM/PyTorch:$PYTHONPATH" >> $GITHUB_ENV
-       
-      - name: Debug Python Path
-        run: python -c "import sys; print('PYTHONPATH:', sys.path)"
-
       - name: Test Code
-        run: |
-          export PYTHONPATH=$(pwd):$(pwd)/CAMDM/PyTorch:$PYTHONPATH
-          pytest fluent_pose_synthesis
+        run: pytest fluent_pose_synthesis

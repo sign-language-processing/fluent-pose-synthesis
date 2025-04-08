@@ -12,6 +12,7 @@ dependencies = [
     "tensorflow-datasets==4.9.7",
     "sign-language-datasets",
     "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
+    "CAMDM @ git+https://github.com/AmitMY/CAMDM",
     "torch",
     "matplotlib",
     "blobfile",

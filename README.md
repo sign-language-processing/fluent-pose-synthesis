@@ -12,7 +12,7 @@ We recommend using a virtual environment (e.g., `venv` or `conda`) and installin
 
 ```bash
 # Clone the repository
-git clone git+https://github.com/sign-language-processing/fluent-pose-synthesis
+git clone https://github.com/sign-language-processing/fluent-pose-synthesis.git
 cd fluent-pose-synthesis
 
 # Install dependencies using pip (defined in pyproject.toml)
@@ -52,7 +52,7 @@ To quickly test if everything works:
 ```bash
 python fluent_pose_synthesis/train.py \
   --name debug \
-  --data pose_data/output \
+  --data assets/sample_dataset \
   --save save/debug_run
 ```
 

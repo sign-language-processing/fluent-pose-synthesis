@@ -11,9 +11,9 @@ import torch.serialization
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from pose_format.torch.masked.collator import zero_pad_collator
-from CAMDM.PyTorch.diffusion.create_diffusion import create_gaussian_diffusion
-from CAMDM.PyTorch.utils.common import fixseed, select_platform
-from CAMDM.PyTorch.utils.logger import Logger
+from CAMDM.diffusion.create_diffusion import create_gaussian_diffusion
+from CAMDM.utils.common import fixseed, select_platform
+from CAMDM.utils.logger import Logger
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
 from fluent_pose_synthesis.data.load_data import SignLanguagePoseDataset
