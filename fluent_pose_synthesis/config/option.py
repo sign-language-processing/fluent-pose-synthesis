@@ -16,7 +16,7 @@ def add_diffusion_args(parser):
     parser.add_argument('--sigma_small', action='store_true', help='Use small sigma values.')
 
 def add_train_args(parser):
-    parser.add_argument('--epoch', type=int, default=50, help='Number of training epochs.')
+    parser.add_argument('--epoch', type=int, default=100, help='Number of training epochs.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate.')
     parser.add_argument('--lr_anneal_steps', type=int, default=0, help='Annealing steps.')
     parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay.')

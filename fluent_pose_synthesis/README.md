@@ -5,18 +5,23 @@ It deals with correcting the prosody and intonation.
 
 ## Usage
 
+```bash
+pip install git+https://github.com/sign-language-processing/fluent-pose-synthesis
+```
+
 
 ### 1. Environment Setup
 
-We recommend using a virtual environment (e.g., `venv` or `conda`) and installing dependencies via `pyproject.toml`.
+We recommend using `conda` for managing dependencies.
 
 ```bash
 # Clone the repository
-git clone git+https://github.com/sign-language-processing/fluent-pose-synthesis
+pip install git+https://github.com/sign-language-processing/fluent-pose-synthesis
 cd fluent-pose-synthesis
 
-# Install dependencies using pip (defined in pyproject.toml)
-pip install .
+# Create and activate environment
+conda env create -f environment.yml
+conda activate fluent-pose
 ```
 
 ### 2. Dataset Download and Preparation

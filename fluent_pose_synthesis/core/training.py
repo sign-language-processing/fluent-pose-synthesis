@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
+from pose_format.utils.generic import normalize_pose_size
 
 from CAMDM.PyTorch.diffusion.gaussian_diffusion import (
     GaussianDiffusion,
@@ -44,32 +45,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
             config, model, diffusion, dataloader, logger, tb_writer, finetune_loader
         )
         self.pose_header = None
-
-    def normalize_tensor(
-        self, tensor: Tensor
-    ) -> Tuple[Tensor, list[Tuple[float, float]]]:
-        batch_size = tensor.shape[0]
-        normed = []
-        stats = []
-        for i in range(batch_size):
-            x = tensor[i]
-            min_val = x.amin()
-            max_val = x.amax()
-            normed.append((x - min_val) / (max_val - min_val + 1e-8))
-            stats.append((min_val, max_val))
-        return torch.stack(normed), stats
-
-    def denormalize_tensor(
-        self, tensor: Tensor, stats: list[Tuple[float, float]]
-    ) -> Tensor:
-        batch_size = tensor.shape[0]
-        denormed = []
-        for i in range(batch_size):
-            min_val, max_val = stats[i]
-            x = tensor[i]
-            x_denormed = x * (max_val - min_val + 1e-8) + min_val
-            denormed.append(x_denormed)
-        return torch.stack(denormed)
 
     def diffuse(
         self,
@@ -228,7 +203,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pin_memory=True,
         )
 
-        # Get a single batch of data and the header
         datas = next(iter(patched_dataloader))
 
         def get_original_dataset(dataset):
@@ -239,7 +213,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
         dataset = get_original_dataset(patched_dataloader.dataset)
         self.pose_header = dataset.pose_header
 
-        # Use the original Ground Truth data (unnormalized)
         fluent_clip = datas["data"].to(self.device)
 
         cond = {
@@ -247,24 +220,12 @@ class PoseTrainingPortal(BaseTrainingPortal):
             for key, val in datas["conditions"].items()
         }
 
-        # Predict the output using the model
         time, _ = self.schedule_sampler.sample(
             patched_dataloader.batch_size, self.device
         )
         with torch.no_grad():
             pred_output = self.diffuse(
                 fluent_clip, time, cond, noise=None, return_loss=False
-            )
-
-        # Denormalize the output
-        if "stats" in datas:
-            stats_list = datas["stats"]
-            if isinstance(stats_list, tuple):
-                stats_list = [stats_list] * fluent_clip.shape[0]
-            pred_output = self.denormalize_tensor(pred_output, stats_list)
-        else:
-            print(
-                "[WARNING] No normalization stats found in batch — skipping denormalization"
             )
 
         self.export_samples(fluent_clip, f"{self.save_dir}/{save_folder_name}", "gt")
@@ -282,24 +243,17 @@ class PoseTrainingPortal(BaseTrainingPortal):
         """
         for i in range(pose_output.shape[0]):
             pose_array = pose_output[i].cpu().numpy()  # (time, 1, keypoints, 3)
-            # time, people, keypoints, D = pose_array.shape
+            time, people, keypoints, dim = pose_array.shape
 
-            # Velocity-based confidence estimation
-            # Compute frame-to-frame differences: (time-1, people, keypoints, D)
-            diffs = np.diff(pose_array, axis=0)
-            # Compute L2 norm of motion per keypoint: (time-1, people, keypoints)
-            velocity = np.linalg.norm(diffs, axis=-1)
-            # Pad the first frame with zeros to restore time: (time, people, keypoints)
-            velocity = np.pad(velocity, ((1, 0), (0, 0), (0, 0)))
-
-            # Convert to confidence using exponential decay
-            confidence = np.exp(-velocity)
-            # Clip values to avoid exact 0 or 1
-            confidence = np.clip(confidence, 0.01, 1.0).astype(np.float32)
+            # Set confidence to all 1.0 for all keypoints
+            confidence = np.ones((time, people, keypoints), dtype=np.float32)
 
             # Wrap and export the pose data
             pose_body = NumPyPoseBody(fps=25, data=pose_array, confidence=confidence)
             pose_obj = Pose(self.pose_header, pose_body)
+
+            # Normalize for visualization
+            normalize_pose_size(pose_obj)
 
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:
