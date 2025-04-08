@@ -1,0 +1,34 @@
+{
+    "document_id": "1183203",
+    "id": "1183203_a3127087",
+    "sentence": {
+        "id": "a3127087",
+        "start": 382820,
+        "end": 385360,
+        "english": "Well, I would assume not.",
+        "german": "Hm, ich glaube nicht.",
+        "glosses": {
+            "gloss": [
+                "$GEST-NM-KOPFSCHÜTTELN1^",
+                "ICH2*",
+                "$INDEX1",
+                "GLAUBEN2B",
+                "NICHT3A"
+            ],
+            "start": [
+                382820,
+                383820,
+                384120,
+                384480,
+                384820
+            ],
+            "end": [
+                383120,
+                383860,
+                384320,
+                384600,
+                384960
+            ]
+        }
+    }
+}

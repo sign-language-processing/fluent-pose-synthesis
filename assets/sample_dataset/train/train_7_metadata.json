@@ -1,0 +1,49 @@
+{
+    "document_id": "1584617",
+    "id": "1584617_a3340720",
+    "sentence": {
+        "id": "a3340720",
+        "start": 1340000,
+        "end": 1344720,
+        "english": "",
+        "german": "Sie sprachen und gestikulierten etwas, aber sie sprachen langsam, sodass ich gut vom Mund ablesen konnte.",
+        "glosses": {
+            "gloss": [
+                "SPRECHEN4",
+                "AUTORITÄT1^",
+                "SPRECHEN1B*",
+                "ICH1",
+                "SELBST1A",
+                "KANN1*",
+                "GUT1",
+                "MUND1A*",
+                "KANN1",
+                "$GEST-OFF^"
+            ],
+            "start": [
+                1340440,
+                1341320,
+                1342000,
+                1342720,
+                1343060,
+                1343420,
+                1343540,
+                1343760,
+                1344220,
+                1344420
+            ],
+            "end": [
+                1341200,
+                1341900,
+                1342640,
+                1342880,
+                1343300,
+                1343480,
+                1343660,
+                1344060,
+                1344340,
+                1344700
+            ]
+        }
+    }
+}

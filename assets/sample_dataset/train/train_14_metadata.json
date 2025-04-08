@@ -1,0 +1,31 @@
+{
+    "document_id": "2021499",
+    "id": "2021499_a2597837",
+    "sentence": {
+        "id": "a2597837",
+        "start": 120800,
+        "end": 122720,
+        "english": "Instead, I think it just collapses.",
+        "german": "Sondern das sinkt dann so in sich zusammen.",
+        "glosses": {
+            "gloss": [
+                "OBEN1*",
+                "AUTOMATISCH2A*",
+                "$PROD*",
+                "PLATT1A^*"
+            ],
+            "start": [
+                120800,
+                120820,
+                121220,
+                121440
+            ],
+            "end": [
+                120820,
+                121080,
+                121260,
+                122660
+            ]
+        }
+    }
+}

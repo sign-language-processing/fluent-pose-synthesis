@@ -1,0 +1,25 @@
+{
+    "document_id": "1181455",
+    "id": "1181455_a2310396",
+    "sentence": {
+        "id": "a2310396",
+        "start": 548480,
+        "end": 550320,
+        "english": "I took two.",
+        "german": "Ich nahm zwei.",
+        "glosses": {
+            "gloss": [
+                "$NUM-EINER1A:2d",
+                "$PROD*"
+            ],
+            "start": [
+                548720,
+                548960
+            ],
+            "end": [
+                548820,
+                550320
+            ]
+        }
+    }
+}

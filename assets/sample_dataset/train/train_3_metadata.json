@@ -1,0 +1,43 @@
+{
+    "document_id": "1431224",
+    "id": "1431224_a2149983",
+    "sentence": {
+        "id": "a2149983",
+        "start": 14800,
+        "end": 17780,
+        "english": "I accepted whatever the coach said.",
+        "german": "Was der Trainer sagte, nahm ich so an.",
+        "glosses": {
+            "gloss": [
+                "ICH1",
+                "GEHÖREN1^*",
+                "TRAINER1",
+                "WAS1A",
+                "SAGEN1",
+                "ICH1",
+                "AKZEPTIEREN1*",
+                "$GEST-OFF^"
+            ],
+            "start": [
+                15080,
+                15680,
+                15960,
+                16260,
+                16520,
+                16760,
+                17080,
+                17600
+            ],
+            "end": [
+                15380,
+                15780,
+                16120,
+                16320,
+                16680,
+                16840,
+                17420,
+                17780
+            ]
+        }
+    }
+}
