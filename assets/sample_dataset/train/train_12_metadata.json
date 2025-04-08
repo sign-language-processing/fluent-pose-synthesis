@@ -1,0 +1,61 @@
+{
+    "document_id": "1205503",
+    "id": "1205503_a2746580",
+    "sentence": {
+        "id": "a2746580",
+        "start": 125360,
+        "end": 132620,
+        "english": "How does a baby feel when it doesn't have a connection with its mother and she always leaves it alone?",
+        "german": "Wenn eine Mutter keine Bindung zu ihrem Baby hat und es desinteressiert einfach alleine liegen lässt, wie fühlt sich das Baby dann?",
+        "glosses": {
+            "gloss": [
+                "WENN1A",
+                "ICH1*",
+                "GEBURT1B",
+                "$PROD*",
+                "EGAL3*",
+                "WERFEN1^*",
+                "$GEST-ABWINKEN1^",
+                "$GEST^",
+                "$INDEX1",
+                "BABY1",
+                "WIE-FRAGE-VERGLEICH1",
+                "GEFÜHL2B",
+                "$INDEX1",
+                "$GEST-ICH-WEISS-NICHT1^"
+            ],
+            "start": [
+                125520,
+                125760,
+                126400,
+                126700,
+                127180,
+                127740,
+                128780,
+                129160,
+                130040,
+                130360,
+                130540,
+                130760,
+                130960,
+                132300
+            ],
+            "end": [
+                125600,
+                125840,
+                126600,
+                126800,
+                127440,
+                128680,
+                128900,
+                129980,
+                130080,
+                130480,
+                130620,
+                130860,
+                132140,
+                132620
+            ]
+        }
+    }
+}

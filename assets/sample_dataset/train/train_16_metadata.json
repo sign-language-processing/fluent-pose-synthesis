@@ -1,0 +1,31 @@
+{
+    "document_id": "1212176",
+    "id": "1212176_a2779117",
+    "sentence": {
+        "id": "a2779117",
+        "start": 602740,
+        "end": 605400,
+        "english": "I began to receive training and was completely overwhelmed.",
+        "german": "Ich machte dann die Ausbildung und war überfordert.",
+        "glosses": {
+            "gloss": [
+                "ICH1*",
+                "BILDUNG1*",
+                "ICH1",
+                "DAS-HÄTTE-ICH-NICHT-ERWARTET2"
+            ],
+            "start": [
+                602880,
+                603440,
+                603920,
+                604400
+            ],
+            "end": [
+                603080,
+                603580,
+                603960,
+                604700
+            ]
+        }
+    }
+}

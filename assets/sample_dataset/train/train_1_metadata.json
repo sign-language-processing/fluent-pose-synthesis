@@ -1,0 +1,40 @@
+{
+    "document_id": "1206143",
+    "id": "1206143_a3060318",
+    "sentence": {
+        "id": "a3060318",
+        "start": 5920,
+        "end": 8560,
+        "english": "On Lanzarote for example, there is a bad water shortage.",
+        "german": "Auf Lanzarote zum Beispiel gibt es eine starke Wasserknappheit.",
+        "glosses": {
+            "gloss": [
+                "ES-GIBT3*",
+                "$ALPHA1:L",
+                "BEREICH1A^",
+                "WASSER3B",
+                "SEHR7*",
+                "KNAPP1",
+                "$INDEX-MONITOR1"
+            ],
+            "start": [
+                5980,
+                6240,
+                6580,
+                7360,
+                7720,
+                7860,
+                8440
+            ],
+            "end": [
+                6080,
+                6460,
+                7060,
+                7660,
+                7760,
+                8380,
+                8540
+            ]
+        }
+    }
+}

@@ -1,0 +1,25 @@
+{
+    "document_id": "1250646",
+    "id": "1250646_a3022225",
+    "sentence": {
+        "id": "a3022225",
+        "start": 536200,
+        "end": 537440,
+        "english": "Chicken soup/",
+        "german": "Hühnersuppe/",
+        "glosses": {
+            "gloss": [
+                "HUHN1*",
+                "SUPPE1*"
+            ],
+            "start": [
+                536380,
+                536900
+            ],
+            "end": [
+                536760,
+                537180
+            ]
+        }
+    }
+}

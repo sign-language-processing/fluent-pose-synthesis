@@ -1,0 +1,43 @@
+{
+    "document_id": "1211531",
+    "id": "1211531_a2047335",
+    "sentence": {
+        "id": "a2047335",
+        "start": 339500,
+        "end": 343440,
+        "english": "I thought about all the pressured people standing at the boarder.",
+        "german": "Ich dachte an die Personen, die an der Grenze waren und unter Druck standen.",
+        "glosses": {
+            "gloss": [
+                "ICH1*",
+                "DENKEN1B",
+                "PERSON1*",
+                "DORT1",
+                "GRENZE1B",
+                "HART2^",
+                "DRUCK2A*",
+                "UND2A"
+            ],
+            "start": [
+                339700,
+                340060,
+                340860,
+                341580,
+                341940,
+                342480,
+                342940,
+                343320
+            ],
+            "end": [
+                339780,
+                340420,
+                341340,
+                341680,
+                342140,
+                342620,
+                343140,
+                343440
+            ]
+        }
+    }
+}

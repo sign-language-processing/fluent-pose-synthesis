@@ -1,0 +1,34 @@
+{
+    "document_id": "1583214",
+    "id": "1583214_a1859979",
+    "sentence": {
+        "id": "a1859979",
+        "start": 655520,
+        "end": 659300,
+        "english": "The cat had problems with it's kidneys and heart.",
+        "german": "Er hatte Nieren- und Herzprobleme.",
+        "glosses": {
+            "gloss": [
+                "VERSAGEN1",
+                "NIERE1A",
+                "HERZ1A*",
+                "KÖRPER1^*",
+                "$GEST-OFF^"
+            ],
+            "start": [
+                655900,
+                656660,
+                657420,
+                657840,
+                658140
+            ],
+            "end": [
+                656080,
+                656920,
+                657520,
+                658040,
+                658440
+            ]
+        }
+    }
+}

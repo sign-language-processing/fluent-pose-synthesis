@@ -1,0 +1,31 @@
+{
+    "document_id": "1584855",
+    "id": "1584855_a1993395",
+    "sentence": {
+        "id": "a1993395",
+        "start": 301600,
+        "end": 302700,
+        "english": "I had no idea about the motorways in the West.",
+        "german": "Ich wusste nicht, wie die Autobahn im Westen sein würde.",
+        "glosses": {
+            "gloss": [
+                "WESTEN1A*",
+                "$INDEX1*",
+                "ICH2^*",
+                "$GEST-ICH-WEISS-NICHT1^*"
+            ],
+            "start": [
+                301700,
+                301820,
+                302200,
+                302380
+            ],
+            "end": [
+                301780,
+                302100,
+                302300,
+                302440
+            ]
+        }
+    }
+}
