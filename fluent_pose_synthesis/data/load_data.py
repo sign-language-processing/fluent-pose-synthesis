@@ -98,27 +98,31 @@ class SignLanguagePoseDataset(Dataset):
         with open(sample["metadata_path"], "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-        # Apply in-place normalization
-        fluent_pose.normalize()
-        disfluent_pose.normalize()
+        # # Apply in-place normalization
+        # fluent_pose.normalize()
+        # disfluent_pose.normalize()
 
-        fluent_data = fluent_pose.body.data.astype(self.dtype)
+        fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
         # Use the entire disfluent sequence as condition
-        disfluent_seq = disfluent_pose.body.data.astype(self.dtype)
-        disfluent_mask = disfluent_pose.body.mask
+        disfluent_data = np.array(disfluent_pose.body.data.astype(self.dtype))
 
         fluent_length = len(fluent_data)
-        # Dynamic windowing: randomly select a window of length fluent_frames
-        if fluent_length > self.fluent_frames:
-            valid_windows = [
-                start
-                for start in range(0, fluent_length - self.fluent_frames + 1)
-                if np.any(fluent_data[start : start + self.fluent_frames] != 0)
-            ]
-            start = np.random.choice(valid_windows) if valid_windows else 0
-            fluent_clip = fluent_data[start : start + self.fluent_frames]
+
+        # If the fluent sequence is shorter than fluent_frames, pad it with the last frame
+        if fluent_length < self.fluent_frames:
+            fluent_padding = np.repeat(fluent_data[[-1]], self.fluent_frames - fluent_length, axis=0)
+            fluent_clip = np.concatenate([fluent_data, fluent_padding], axis=0)
         else:
-            fluent_clip = fluent_data  # Will be padded later using collator
+            fluent_clip = fluent_data[:self.fluent_frames]
+
+        # Normalize using (x - mean) / std
+        input_mean = fluent_clip.mean(axis=(0, 1), keepdims=True)
+        input_std = fluent_clip.std(axis=(0, 1), keepdims=True)
+        fluent_clip = (fluent_clip - input_mean) / input_std
+
+        condition_mean = disfluent_data.mean(axis=(0, 1), keepdims=True)
+        condition_std = disfluent_data.std(axis=(0, 1), keepdims=True)
+        disfluent_seq = (disfluent_data - condition_mean) / condition_std
 
         # Frame-level mask generation
         target_mask = np.any(fluent_clip != 0, axis=(1, 2, 3))  # shape: [T]
@@ -131,9 +135,6 @@ class SignLanguagePoseDataset(Dataset):
                 "input_sequence": torch.tensor(
                     disfluent_seq, dtype=torch.float32
                 ),  # Full disfluent input
-                "input_mask": torch.tensor(
-                    disfluent_mask, dtype=torch.bool
-                ),  # Disfluent sequence mask
                 "target_mask": torch.tensor(
                     target_mask, dtype=torch.bool
                 ),  # Per-frame valid mask
@@ -176,7 +177,6 @@ def example_dataset():
         print("Batch size:", len(batch))
         print("Normalized target clip:", batch["data"].shape)
         print("Input sequence:", batch["conditions"]["input_sequence"].shape)
-        print("Input mask:", batch["conditions"]["input_mask"].shape)
         print("Target mask:", batch["conditions"]["target_mask"].shape)
 
     if measure_loading_time:
