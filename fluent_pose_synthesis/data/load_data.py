@@ -8,6 +8,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
+from pose_anonymization.data.normalization import normalize_mean_std
 
 
 class SignLanguagePoseDataset(Dataset):
@@ -98,9 +99,13 @@ class SignLanguagePoseDataset(Dataset):
         with open(sample["metadata_path"], "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-        # Apply normalization by shoulders width first
+        # Apply normalization by shoulders width first (spatial normalization)
         fluent_pose.normalize()
         disfluent_pose.normalize()
+
+        # Apply full-pose normalization using global mean/std (scale normalization)
+        fluent_pose = normalize_mean_std(fluent_pose)
+        disfluent_pose = normalize_mean_std(disfluent_pose)
 
         fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
         # Use the entire disfluent sequence as condition
@@ -115,14 +120,7 @@ class SignLanguagePoseDataset(Dataset):
         else:
             fluent_clip = fluent_data[:self.fluent_frames]
 
-        # Normalize using (x - mean) / std
-        input_mean = fluent_clip.mean(axis=(0, 1), keepdims=True)
-        input_std = fluent_clip.std(axis=(0, 1), keepdims=True)
-        fluent_clip = (fluent_clip - input_mean) / input_std
-
-        condition_mean = disfluent_data.mean(axis=(0, 1), keepdims=True)
-        condition_std = disfluent_data.std(axis=(0, 1), keepdims=True)
-        disfluent_seq = (disfluent_data - condition_mean) / condition_std
+        disfluent_seq = disfluent_data
 
         # Frame-level mask generation
         target_mask = np.any(fluent_clip != 0, axis=(1, 2, 3))  # shape: [T]
