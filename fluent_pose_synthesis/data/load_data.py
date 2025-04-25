@@ -98,9 +98,9 @@ class SignLanguagePoseDataset(Dataset):
         with open(sample["metadata_path"], "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-        # # Apply in-place normalization
-        # fluent_pose.normalize()
-        # disfluent_pose.normalize()
+        # Apply normalization by shoulders width first
+        fluent_pose.normalize()
+        disfluent_pose.normalize()
 
         fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
         # Use the entire disfluent sequence as condition
