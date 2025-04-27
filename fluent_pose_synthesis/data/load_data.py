@@ -76,6 +76,10 @@ class SignLanguagePoseDataset(Dataset):
         else:
             self.pose_header = None
 
+        # Repeat the dataset for testing purposes
+        self.examples = self.examples * 10
+        print(f"Dataset expanded to {len(self.examples)} samples after repeating.")
+
     def __len__(self) -> int:
         """
         Returns the number of samples in the dataset.
@@ -99,9 +103,12 @@ class SignLanguagePoseDataset(Dataset):
         with open(sample["metadata_path"], "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-        # Apply normalization by shoulders width first (spatial normalization)
-        fluent_pose.normalize()
-        disfluent_pose.normalize()
+        # Before normalization: extract raw data for statistics
+        fluent_data_raw = np.array(fluent_pose.body.data.astype(self.dtype))
+        disfluent_data_raw = np.array(disfluent_pose.body.data.astype(self.dtype))
+
+        print(f"[DEBUG][Before Norm] Fluent raw data mean: {fluent_data_raw.mean()}, std: {fluent_data_raw.std()}")
+        print(f"[DEBUG][Before Norm] Disfluent raw data mean: {disfluent_data_raw.mean()}, std: {disfluent_data_raw.std()}")
 
         # Apply full-pose normalization using global mean/std (scale normalization)
         fluent_pose = normalize_mean_std(fluent_pose)
@@ -110,6 +117,9 @@ class SignLanguagePoseDataset(Dataset):
         fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
         # Use the entire disfluent sequence as condition
         disfluent_data = np.array(disfluent_pose.body.data.astype(self.dtype))
+
+        print(f"[DEBUG][After Norm] Fluent data mean: {fluent_data.mean()}, std: {fluent_data.std()}")
+        print(f"[DEBUG][After Norm] Disfluent data mean: {disfluent_data.mean()}, std: {disfluent_data.std()}")
 
         fluent_length = len(fluent_data)
 
