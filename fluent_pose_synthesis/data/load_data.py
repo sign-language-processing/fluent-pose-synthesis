@@ -110,6 +110,10 @@ class SignLanguagePoseDataset(Dataset):
         print(f"[DEBUG][Before Norm] Fluent raw data mean: {fluent_data_raw.mean()}, std: {fluent_data_raw.std()}")
         print(f"[DEBUG][Before Norm] Disfluent raw data mean: {disfluent_data_raw.mean()}, std: {disfluent_data_raw.std()}")
 
+        # Apply normalization by shoulders width first (spatial normalization)
+        fluent_pose.normalize()
+        disfluent_pose.normalize()
+
         # Apply full-pose normalization using global mean/std (scale normalization)
         fluent_pose = normalize_mean_std(fluent_pose)
         disfluent_pose = normalize_mean_std(disfluent_pose)
