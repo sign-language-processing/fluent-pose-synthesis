@@ -19,6 +19,34 @@ from CAMDM.network.training import BaseTrainingPortal
 from CAMDM.utils.common import mkdir
 
 
+def masked_l2_per_sample(x, y, mask=None, reduce=True):
+    """
+    Compute masked L2 loss per sample.
+    Args:
+        x, y: Tensors of shape (batch_size, joints, dims, time)
+        mask: Tensor of shape (batch_size, joints, dims, time). True = masked (invalid), False = valid.
+        reduce: Whether to average over batch dimension.
+    """
+    diff = (x - y) ** 2  # (B, K, D, T)
+
+    if mask is not None:
+        mask = mask.bool()  # Ensure bool
+        valid_mask = (~mask).float()  # False=valid -> 1.0, True=masked -> 0.0
+        diff = diff * valid_mask
+    else:
+        valid_mask = torch.ones_like(diff)
+
+    per_sample_loss = diff.flatten(start_dim=1).sum(dim=1)
+    valid_elements = valid_mask.flatten(start_dim=1).sum(dim=1)
+
+    per_sample_loss = per_sample_loss / valid_elements.clamp(min=1)
+
+    if reduce:
+        return per_sample_loss.mean()
+    else:
+        return per_sample_loss
+
+
 class PoseTrainingPortal(BaseTrainingPortal):
     def __init__(
         self,
@@ -48,7 +76,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
     def diffuse(
         self,
-        fluent_clip: Tensor,
+        x_start: Tensor,
         t: Tensor,
         cond: Dict[str, Tensor],
         noise: Optional[Tensor] = None,
@@ -63,124 +91,74 @@ class PoseTrainingPortal(BaseTrainingPortal):
             noise: Optional noise to apply during diffusion.
             return_loss: Whether to compute and return training losses.
         """
+        x_start = x_start.permute(0, 2, 3, 1) # (batch_size, keypoints, dimensions, time)
+
+        if noise is None:
+            noise = torch.randn_like(x_start)
+
+        x_t = self.diffusion.q_sample(x_start, t, noise=noise)
+
+        cond["input_sequence"] = cond["input_sequence"].permute(0, 2, 3, 1) # (batch_size, keypoints, dimensions, time)
+
+        model_output = self.model.interface(x_t, self.diffusion._scale_timesteps(t), cond)
+
         if return_loss:
-            x_start = fluent_clip.squeeze(2)  # (batch_size, time, keypoints, 3)
-            if noise is None:
-                noise = torch.randn_like(x_start)
-            x_t = self.diffusion.q_sample(x_start, t, noise=noise)
-
-            x_start_perm = x_start.permute(0, 2, 3, 1)
-            x_t_perm = x_t.permute(0, 2, 3, 1)
-
-            x_t_for_model = x_t.unsqueeze(2)
-            model_output = self.model.interface(
-                x_t_for_model, self.diffusion._scale_timesteps(t), cond
-            )  # pylint: disable=protected-access
-            model_output_perm = model_output.permute(0, 2, 3, 1)
 
             loss_terms = {}
 
-            if self.diffusion.model_var_type in [
-                ModelVarType.LEARNED,
-                ModelVarType.LEARNED_RANGE,
-            ]:
-                batch_size, keypoints = x_t_perm.shape[:2]
-                assert model_output_perm.shape == (
-                    batch_size,
-                    keypoints * 2,
-                    *x_t_perm.shape[2:],
-                ), "Model output shape mismatch"
-                model_output_perm, model_var_values = torch.split(
-                    model_output_perm, keypoints, dim=1
-                )
-                frozen_out = torch.cat(
-                    [model_output_perm.detach(), model_var_values], dim=1
-                )
-                loss_terms["vb"] = self.diffusion._vb_terms_bpd(
-                    model=lambda *args, r=frozen_out: r,
-                    x_start=x_start_perm,
-                    x_t=x_t_perm,
-                    t=t,
-                    clip_denoised=False,
-                )["output"]
-                if self.diffusion.loss_type == LossType.RESCALED_MSE:
-                    loss_terms["vb"] *= self.diffusion.num_timesteps / 1000.0
-                print("vb loss:", loss_terms["vb"].mean().item())
-
             mmt = self.diffusion.model_mean_type  # real Enum instance from diffusion
-
             if mmt.name == "PREVIOUS_X":
                 target = self.diffusion.q_posterior_mean_variance(
-                    x_start=x_start_perm, x_t=x_t_perm, t=t
+                    x_start=x_start, x_t=x_t, t=t
                 )[0]
             elif mmt.name == "START_X":
-                target = x_start_perm
+                target = x_start
             elif mmt.name == "EPSILON":
                 target = noise
             else:
                 raise ValueError(f"Unsupported model_mean_type: {mmt}")
 
-            assert (
-                model_output_perm.shape == target.shape == x_start_perm.shape
-            ), "Target shape mismatch"
+            assert (model_output.shape == target.shape == x_start.shape), "Target shape mismatch"
 
-            frame_mask = cond["target_mask"]
-            batch_size, keypoints, dimensions, time_steps = model_output_perm.shape
-            mask = frame_mask[:, None, None, :].expand(
-                batch_size, keypoints, dimensions, time_steps
-            )
+            target_mask = cond["target_mask"].permute(0, 3, 4, 1, 2).squeeze(4)  # (batch_size, keypoints, dimensions, time)
+            batch_size, keypoints, dimensions, time_steps = model_output.shape
+            mask = target_mask
+
+            # print("[DEBUG] mask shape:", mask.shape)
+            # print("[DEBUG] mask valid count:", (mask == False).sum().item(), "/", mask.numel())
+            # print("[DEBUG] any sample mask all zero:", (mask.sum(dim=(1,2,3)) == 0).any().item())
+            # print("[DEBUG] mask mean (coverage):", mask.float().mean().item())
+
+            valid_mask = (mask.sum(dim=(1,2,3)) > 0).float()  # (batch_size,)
+
+            if valid_mask.sum() == 0:
+                print("[WARNING] All samples are invalid, skipping loss computation.")
+                return None, {}
 
             if self.config.trainer.use_loss_mse:
-                loss_terms["loss_data"] = self.diffusion.masked_l2(
-                    target, model_output_perm, mask
-                )
+                per_sample_loss = masked_l2_per_sample(target, model_output, mask, reduce=False)  # (batch_size,)
+                loss_terms["loss_data"] = (per_sample_loss * valid_mask).sum() / valid_mask.sum()
 
             if self.config.trainer.use_loss_vel:
                 target_vel = target[..., 1:] - target[..., :-1]
-                model_output_vel = (
-                    model_output_perm[..., 1:] - model_output_perm[..., :-1]
-                )
+                model_output_vel = model_output[..., 1:] - model_output[..., :-1]
                 mask_vel = mask[..., 1:]
-                loss_terms["loss_data_vel"] = self.diffusion.masked_l2(
-                    target_vel, model_output_vel, mask_vel
-                )
 
-            if self.config.trainer.use_loss_3d:
-                target_rot = target.permute(0, 3, 1, 2)
-                pred_rot = model_output_perm.permute(0, 3, 1, 2)
-                frame_mask = cond["target_mask"]
-                mask_rot = frame_mask[:, :, None, None].expand(
-                    -1, -1, self.config.arch.keypoints, self.config.arch.dims
-                )
-
-                loss_terms["loss_geo_xyz"] = self.diffusion.masked_l2(
-                    target_rot, pred_rot, mask_rot
-                )
-
-                if self.config.trainer.use_loss_vel:
-                    target_xyz_vel = target_rot[:, 1:] - target_rot[:, :-1]
-                    pred_xyz_vel = pred_rot[:, 1:] - pred_rot[:, :-1]
-                    mask_xyz_vel = mask_rot[:, 1:]
-                    loss_terms["loss_geo_xyz_vel"] = self.diffusion.masked_l2(
-                        target_xyz_vel, pred_xyz_vel, mask_xyz_vel
-                    )
+                per_sample_loss_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=False)
+                loss_terms["loss_data_vel"] = (per_sample_loss_vel * valid_mask).sum() / valid_mask.sum()
 
             total_loss = (
                 loss_terms.get("vb", 0.0)
                 + loss_terms.get("loss_data", 0.0)
                 + loss_terms.get("loss_data_vel", 0.0)
-                + loss_terms.get("loss_geo_xyz", 0.0)
-                + loss_terms.get("loss_geo_xyz_vel", 0.0)
             )
             loss_terms["loss"] = total_loss
             print("Total loss:", total_loss.mean().item())
 
-            model_output_final = model_output_perm.permute(0, 3, 1, 2)
-            return model_output_final, loss_terms
+            return model_output.permute(0, 3, 1, 2), loss_terms
 
-        with torch.no_grad():
-            model_output = self.model.interface(fluent_clip, t, cond)
-        return model_output.unsqueeze(2)
+        return model_output.permute(0, 3, 1, 2)
+
 
     def evaluate_sampling(
         self, dataloader: DataLoader, save_folder_name: str = "init_samples"
@@ -192,6 +170,8 @@ class PoseTrainingPortal(BaseTrainingPortal):
             save_folder_name (str): Folder to save generated pose files.
         """
         self.model.eval()
+        self.model.training = False
+
         mkdir(f"{self.save_dir}/{save_folder_name}")
 
         patched_dataloader = DataLoader(
@@ -228,41 +208,56 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 fluent_clip, time, cond, noise=None, return_loss=False
             )
 
-        self.export_samples(fluent_clip, f"{self.save_dir}/{save_folder_name}", "gt")
-        self.export_samples(pred_output, f"{self.save_dir}/{save_folder_name}", "pred")
+        fluent_clip_array, pred_output_array = fluent_clip.cpu().numpy(), pred_output.cpu().numpy()
+        unormed_fluent_clip = fluent_clip_array * dataset.input_std + dataset.input_mean
+        unormed_pred_output = pred_output_array * dataset.input_std + dataset.input_mean
 
-        self.logger.info(f"Evaluate sampling {save_folder_name} at epoch {self.epoch}")
+        self.export_samples(unormed_fluent_clip, f"{self.save_dir}/{save_folder_name}", "gt")
+        self.export_samples(unormed_pred_output, f"{self.save_dir}/{save_folder_name}", "pred")
+
+        np.save(f"{self.save_dir}/{save_folder_name}/gt_output_normed.npy", fluent_clip_array)
+        np.save(f"{self.save_dir}/{save_folder_name}/pred_output_normed.npy", pred_output_array)
+        np.save(f"{self.save_dir}/{save_folder_name}/gt_output.npy", unormed_fluent_clip)
+        np.save(f"{self.save_dir}/{save_folder_name}/pred_output.npy", unormed_pred_output)
+
+        if self.logger:
+            self.logger.info(f"Evaluate sampling {save_folder_name} at epoch {self.epoch}")
+        else:
+            print(f"Evaluate sampling {save_folder_name} at epoch {self.epoch}")
+
 
     def export_samples(self, pose_output: Tensor, save_path: str, prefix: str):
         """
-        Export pose sequences to disk in .pose format, with velocity-based confidence scores.
+        Export pose sequences to disk in .pose format.
         Args:
             pose_output: A tensor of shape (batch_size, time, 1, keypoints, 3) or (batch_size, time, keypoints, 3).
             save_path: Path where files will be saved.
             prefix: Prefix for file names, e.g., "gt" or "pred".
         """
         for i in range(pose_output.shape[0]):
-            pose_array = pose_output[i].cpu().numpy()  # (time, 1, keypoints, 3)
-            time, people, keypoints, dim = pose_array.shape
+
+            pose_array = pose_output[i] # (time, 1, keypoints, 3)
+            time, keypoints, dim = pose_array.shape
+            pose_array = pose_array.reshape(time, 1, keypoints, dim)
 
             # Set confidence to all 1.0 for all keypoints
-            confidence = np.ones((time, people, keypoints), dtype=np.float32)
+            confidence = np.ones((time, 1, keypoints), dtype=np.float32)
 
             # Wrap and export the pose data
             pose_body = NumPyPoseBody(fps=25, data=pose_array, confidence=confidence)
             pose_obj = Pose(self.pose_header, pose_body)
 
             # Normalize for visualization
-            normalize_pose_size(pose_obj)
+            # normalize_pose_size(pose_obj)
 
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:
                 pose_obj.write(f)
-            self.logger.info(f"Saved pose file: {file_path}")
+            # self.logger.info(f"Saved pose file: {file_path}")
 
             # Verify the file by reading it back
             with open(file_path, "rb") as f_check:
-                Pose.read(
-                    f_check.read()
-                )  # If error occurs, the file was not written correctly
-            self.logger.info(f"Pose file {file_path} read successfully.")
+                Pose.read(f_check.read())
+
+            # If error occurs, the file was not written correctly
+            # self.logger.info(f"Pose file {file_path} read successfully.")
