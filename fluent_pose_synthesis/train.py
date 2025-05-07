@@ -59,7 +59,7 @@ def train(
     train_dataset = SignLanguagePoseDataset(
         data_dir=config.data,
         split="train",
-        fluent_frames=config.arch.clip_len,
+        chunk_len=config.arch.chunk_len,
         dtype=np_dtype,
         limited_num=config.trainer.load_num,
     )
@@ -76,7 +76,7 @@ def train(
 
     logger.info(
         f"Training Dataset includes {len(train_dataset)} samples, "
-        f"with {config.arch.clip_len} fluent frames per sample."
+        f"with {config.arch.chunk_len} fluent frames per sample."
     )
 
     diffusion = create_gaussian_diffusion(config)
@@ -84,7 +84,7 @@ def train(
 
     model = SignLanguagePoseDiffusion(
         input_feats=input_feats,
-        clip_len=config.arch.clip_len,
+        chunk_len=config.arch.chunk_len,
         keypoints=config.arch.keypoints,
         dims=config.arch.dims,
         latent_dim=config.arch.latent_dim,
@@ -100,6 +100,7 @@ def train(
         device=config.device,
     ).to(config.device)
 
+    logger.info(f"Model: {model}")
     trainer = PoseTrainingPortal(
         config, model, diffusion, train_dataloader, logger, tb_writer
     )
@@ -133,7 +134,8 @@ def main():
     parser.add_argument(
         "-i",
         "--data",
-        default="/scratch/ronli/output",
+        default="assets/sample_dataset",
+        # default="/pose_data/output",
         type=str,
         help="Path to dataset folder",
     )
@@ -143,7 +145,7 @@ def main():
     parser.add_argument(
         "-s",
         "--save",
-        default="./save",
+        default="save/debug_run",
         type=str,
         help="Directory to save model and logs",
     )
@@ -162,15 +164,15 @@ def main():
     config.save = Path(config.save)
 
     if args.cluster:
-        config.data = Path("/scratch/ronli/output") / args.data
+        config.data = Path("/scratch/ronli/pose_data/output") / args.data
         config.save = Path("/scratch/ronli/save") / args.name
 
     # Debug mode settings
     if "debug" in args.name:
         config.trainer.workers = 1
-        config.trainer.load_num = 16
-        config.trainer.batch_size = 16
-        config.trainer.epoch = 100
+        config.trainer.load_num = -1
+        config.trainer.batch_size = 32
+        config.trainer.epoch = 2000
 
     # Handle existing folder
     if (

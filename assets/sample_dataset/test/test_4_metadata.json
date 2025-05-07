@@ -1,0 +1,40 @@
+{
+    "document_id": "1585089",
+    "id": "1585089_a2474933",
+    "sentence": {
+        "id": "a2474933",
+        "start": 54540,
+        "end": 57800,
+        "english": "I would think it’s more psychological, right?",
+        "german": "Ich denke, es war eher psychisch bedingt, oder?",
+        "glosses": {
+            "gloss": [
+                "ICH1",
+                "DENKEN1A",
+                "$INDEX1",
+                "DEPRESSION3^*",
+                "$GEST-OFF^",
+                "ODER1",
+                "$GEST-OFF^"
+            ],
+            "start": [
+                54620,
+                55000,
+                55100,
+                55640,
+                56260,
+                56680,
+                57160
+            ],
+            "end": [
+                54720,
+                55040,
+                55160,
+                56080,
+                56500,
+                56880,
+                57800
+            ]
+        }
+    }
+}

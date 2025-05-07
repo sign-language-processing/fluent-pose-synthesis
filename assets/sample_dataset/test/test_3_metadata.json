@@ -1,0 +1,67 @@
+{
+    "document_id": "1177002",
+    "id": "1177002_a3259474",
+    "sentence": {
+        "id": "a3259474",
+        "start": 405260,
+        "end": 411520,
+        "english": "Of course with artificial insemination, one could maybe request specific things.",
+        "german": "Natürlich kann es sein, dass man sich bei der künstlichen Befruchtung dann auch Dinge wünschen kann.",
+        "glosses": {
+            "gloss": [
+                "$ORAL^",
+                "KLAR1B",
+                "WENN1A",
+                "BEISPIEL1*",
+                "TYPISCH1*",
+                "$INDEX1",
+                "KÜNSTLICH5*",
+                "BEFRUCHTUNG2*",
+                "SOLL1*",
+                "EMPFINDUNG1*",
+                "BESTIMMEN1*",
+                "KANN2B*",
+                "ICH1*",
+                "WÜNSCHEN1B",
+                "AUSWAHL1C*",
+                "AUFZÄHLEN1C*"
+            ],
+            "start": [
+                405320,
+                405900,
+                406260,
+                406640,
+                406860,
+                407180,
+                407860,
+                408460,
+                409080,
+                409260,
+                409600,
+                409840,
+                410340,
+                410660,
+                411000,
+                411000
+            ],
+            "end": [
+                405840,
+                406040,
+                406340,
+                406740,
+                407120,
+                407260,
+                408060,
+                408960,
+                409100,
+                409440,
+                409620,
+                410060,
+                410420,
+                410780,
+                411520,
+                411520
+            ]
+        }
+    }
+}

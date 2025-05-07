@@ -1,0 +1,34 @@
+{
+    "document_id": "1246772",
+    "id": "1246772_a2387452",
+    "sentence": {
+        "id": "a2387452",
+        "start": 233480,
+        "end": 236640,
+        "english": "I held my talk in July.",
+        "german": "Ich habe im Juli den Vortrag gehalten.",
+        "glosses": {
+            "gloss": [
+                "$INDEX1",
+                "ICH1*",
+                "JULI1A",
+                "VORTRAG1",
+                "ICH1"
+            ],
+            "start": [
+                233540,
+                233920,
+                234320,
+                234880,
+                235360
+            ],
+            "end": [
+                233620,
+                234040,
+                234520,
+                235180,
+                235580
+            ]
+        }
+    }
+}

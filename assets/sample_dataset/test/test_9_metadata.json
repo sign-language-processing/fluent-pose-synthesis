@@ -1,0 +1,37 @@
+{
+    "document_id": "1291572",
+    "id": "1291572_a2663101",
+    "sentence": {
+        "id": "a2663101",
+        "start": 545380,
+        "end": 547520,
+        "english": "Then they are one of the same flesh and blood.",
+        "german": "Sie sind dann ein Fleisch und Blut.",
+        "glosses": {
+            "gloss": [
+                "$NUM-EINER1A:1d*",
+                "$NUM-EINER1A:1d*",
+                "FLEISCH1B",
+                "UND5*",
+                "BLUT1D",
+                "ZUSAMMENHANG1A^*"
+            ],
+            "start": [
+                545520,
+                546040,
+                546460,
+                546680,
+                546880,
+                547200
+            ],
+            "end": [
+                545580,
+                546160,
+                546560,
+                546740,
+                547060,
+                547480
+            ]
+        }
+    }
+}

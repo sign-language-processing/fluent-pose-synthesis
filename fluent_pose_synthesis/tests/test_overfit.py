@@ -93,7 +93,7 @@ def create_minimal_config(device="cpu"):
         arch=Namespace(
             keypoints=178,
             dims=3,
-            clip_len=40,
+            chunk_len=40,
             latent_dim=32,
             ff_size=64,
             num_layers=2,
@@ -119,7 +119,7 @@ def test_overfit_toy_batch():
 
     batch = get_toy_batch(
         batch_size=config.trainer.batch_size,
-        seq_len=config.arch.clip_len,
+        seq_len=config.arch.chunk_len,
         keypoints=config.arch.keypoints,
     )
 
@@ -138,7 +138,7 @@ def test_overfit_toy_batch():
 
     model = SignLanguagePoseDiffusion(
         input_feats=config.arch.keypoints * config.arch.dims,
-        clip_len=config.arch.clip_len,
+        chunk_len=config.arch.chunk_len,
         keypoints=config.arch.keypoints,
         dims=config.arch.dims,
         latent_dim=config.arch.latent_dim,
@@ -205,7 +205,7 @@ def test_overfit_toy_batch():
         print(f"out1 shape: {out1.shape}, out2 shape: {out2.shape}")
         expected_shape = (
             1,
-            config.arch.clip_len,
+            config.arch.chunk_len,
             config.arch.keypoints,
             config.arch.dims,
         )

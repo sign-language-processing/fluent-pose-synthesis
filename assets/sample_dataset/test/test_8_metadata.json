@@ -1,0 +1,40 @@
+{
+    "document_id": "1289462",
+    "id": "1289462_a2395820",
+    "sentence": {
+        "id": "a2395820",
+        "start": 155940,
+        "end": 158800,
+        "english": "It's been really bad for half a year now.",
+        "german": "Seit einem Jahr ist das bei mir wirklich schlimm.",
+        "glosses": {
+            "gloss": [
+                "$GEST-ABWINKEN1^*",
+                "$GEST^*",
+                "SCHLIMM4*",
+                "ICH2*",
+                "VOR1H",
+                "$NUM-EINER1A:1d",
+                "VERGANGENHEIT1^"
+            ],
+            "start": [
+                156040,
+                156540,
+                156960,
+                157260,
+                157560,
+                157820,
+                158120
+            ],
+            "end": [
+                156240,
+                156720,
+                157120,
+                157380,
+                157640,
+                157940,
+                158140
+            ]
+        }
+    }
+}

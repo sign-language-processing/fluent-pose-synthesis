@@ -11,7 +11,6 @@ from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.generic import normalize_pose_size
 from pose_anonymization.data.normalization import unnormalize_mean_std
 
-
 from CAMDM.diffusion.gaussian_diffusion import GaussianDiffusion
 from CAMDM.network.training import BaseTrainingPortal
 from CAMDM.utils.common import mkdir
@@ -187,7 +186,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # Calculate Total Loss
             total_loss = loss_terms.get("loss_data", 0.0) + loss_terms.get("loss_data_vel", 0.0)
             loss_terms["loss"] = total_loss
-            print("Total loss:", total_loss.item()) # Loss is already scalar due to reduce=True
+            # print("Total loss:", total_loss.item()) # Loss is already scalar due to reduce=True
 
             return model_output_original_shape, loss_terms
 
@@ -285,8 +284,10 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pose_body = NumPyPoseBody(fps=25, data=pose_array, confidence=confidence)
             pose_obj = Pose(self.pose_header, pose_body)
 
-            # Unnormalize the pose data
+            # Unnormalize the pose data and normalize its size for export
             unnorm_pose = unnormalize_mean_std(pose_obj)
+            # Scale the pose back for visualization
+            normalize_pose_size(unnorm_pose)
 
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:

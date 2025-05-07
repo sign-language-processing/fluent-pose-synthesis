@@ -180,7 +180,8 @@ class SignLanguagePoseDiffusion(nn.Module):
             # print(f"[DEBUG FWD 3d] Final prev_out_emb shape: {prev_out_emb.shape}")
             embeddings_to_concat.append(prev_out_emb)
         else:
-            print("[DEBUG FWD 3b] No previous_output provided or it's empty.")
+            # print("[DEBUG FWD 3b] No previous_output provided or it's empty.")
+            pass
 
         # 4. Embed Current Fluent Clip (Noisy Target 'x')
         _fluent_emb_raw = self.fluent_encoder(fluent_clip) # Expected (T_chunk, B, D)

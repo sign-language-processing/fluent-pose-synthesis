@@ -75,7 +75,6 @@ class SignLanguagePoseDataset(Dataset):
         """
         return len(self.examples)
 
-
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """
         Retrieves a sample from the dataset. For each sample, load the entire disfluent sequence as condition,
@@ -127,8 +126,12 @@ class SignLanguagePoseDataset(Dataset):
         if history_len > 0:
             history_chunk = fluent_data[:history_len]
         else:
-            # No history chunk available, create an empty array with time dimension 0
-            history_chunk = np.empty((0,) + fluent_data.shape[1:], dtype=self.dtype)
+            # MODIFICATION: Force minimum length of 1 for previous_output if empty
+            history_chunk = np.zeros((1,) + fluent_data.shape[1:], dtype=self.dtype) # create a single empty frame
+            # The purpose of this is to ensure the current collate_fn works
+        # else:
+        #     # No history chunk available, create an empty array with time dimension 0
+        #     history_chunk = np.empty((0,) + fluent_data.shape[1:], dtype=self.dtype)
 
         # 3. Prepare the entire disfluent sequence as condition
         disfluent_seq = disfluent_data
@@ -163,6 +166,12 @@ class SignLanguagePoseDataset(Dataset):
             "previous_output": history_chunk,    # (T_hist, K, D)
             "target_mask": target_mask           # (T_chunk, K, D)
         }
+
+        # print(f"DEBUG Dataset idx {idx}:")
+        # print(f"  target_chunk shape: {target_chunk.shape}")
+        # print(f"  input_sequence shape: {disfluent_seq.shape}")
+        # print(f"  previous_output shape: {history_chunk.shape}")
+        # print(f"  target_mask shape: {target_mask.shape}")
 
         return {
             "data": target_chunk,   # (T_chunk, K, D)

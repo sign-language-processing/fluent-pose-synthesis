@@ -1,0 +1,40 @@
+{
+    "document_id": "1250972",
+    "id": "1250972_a2558205",
+    "sentence": {
+        "id": "a2558205",
+        "start": 122820,
+        "end": 126340,
+        "english": "After that another firm supported me in my job hunt.",
+        "german": "Danach hat mich eine andere Firma bei der Jobsuche unterstützt.",
+        "glosses": {
+            "gloss": [
+                "KOMMEN1^*",
+                "ANDERS1*",
+                "FIRMA1A",
+                "HELFEN1*",
+                "AUF-PERSON1*",
+                "ICH2*",
+                "UNTERSTÜTZEN1A"
+            ],
+            "start": [
+                123060,
+                123480,
+                124420,
+                125000,
+                125520,
+                125760,
+                125920
+            ],
+            "end": [
+                123360,
+                123840,
+                124560,
+                125380,
+                125600,
+                125800,
+                126240
+            ]
+        }
+    }
+}

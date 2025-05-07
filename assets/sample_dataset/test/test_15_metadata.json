@@ -1,0 +1,28 @@
+{
+    "document_id": "1428472",
+    "id": "1428472_a3228720",
+    "sentence": {
+        "id": "a3228720",
+        "start": 836740,
+        "end": 837840,
+        "english": "Why am I deaf?",
+        "german": "Warum war ich gehörlos?",
+        "glosses": {
+            "gloss": [
+                "ICH1",
+                "TAUB-GEHÖRLOS1A",
+                "WARUM10A*"
+            ],
+            "start": [
+                836920,
+                837300,
+                837720
+            ],
+            "end": [
+                837020,
+                837580,
+                837840
+            ]
+        }
+    }
+}

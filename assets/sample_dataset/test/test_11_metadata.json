@@ -1,0 +1,34 @@
+{
+    "document_id": "1413251",
+    "id": "1413251_a3093382",
+    "sentence": {
+        "id": "a3093382",
+        "start": 593460,
+        "end": 595260,
+        "english": "Here, it should also grow slowly, that’s better.",
+        "german": "Hier sollte das auch langsam wachsen, das ist besser.",
+        "glosses": {
+            "gloss": [
+                "WIE3A*",
+                "HIER1",
+                "LANGSAM1*",
+                "BESSER2",
+                "$GEST-NM-KOPFNICKEN1^"
+            ],
+            "start": [
+                593460,
+                593660,
+                594240,
+                594600,
+                594900
+            ],
+            "end": [
+                593600,
+                593820,
+                594480,
+                594780,
+                595260
+            ]
+        }
+    }
+}

@@ -1,0 +1,34 @@
+{
+    "document_id": "1187154",
+    "id": "1187154_a3077606",
+    "sentence": {
+        "id": "a3077606",
+        "start": 155180,
+        "end": 159140,
+        "english": "She looks back at him and goes, “What do you think, am I the baker or what?",
+        "german": "Sie blickt zurück und antwortet: „Glaubst du, ich bin Bäcker oder was?",
+        "glosses": {
+            "gloss": [
+                "GLAUBEN2A",
+                "DU1*",
+                "PERSON1",
+                "BACKEN3A*",
+                "WAS1A"
+            ],
+            "start": [
+                155840,
+                155960,
+                157500,
+                157720,
+                157980
+            ],
+            "end": [
+                155960,
+                156080,
+                157600,
+                157860,
+                158180
+            ]
+        }
+    }
+}
