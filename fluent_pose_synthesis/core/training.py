@@ -183,10 +183,16 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
                 loss_terms["loss_data_vel"] = loss_data_vel
 
-            # Calculate Total Loss
-            total_loss = loss_terms.get("loss_data", 0.0) + loss_terms.get("loss_data_vel", 0.0)
+            if hasattr(self.config.trainer, "lambda_vel"):
+                lambda_vel = self.config.trainer.lambda_vel
+
+            # Calulate Total Loss
+            total_loss = 0.0
+            if self.config.trainer.use_loss_mse:
+                total_loss += loss_terms.get("loss_data", 0.0)
+            if self.config.trainer.use_loss_vel:
+                total_loss += lambda_vel * loss_terms.get("loss_data_vel", 0.0)
             loss_terms["loss"] = total_loss
-            # print("Total loss:", total_loss.item()) # Loss is already scalar due to reduce=True
 
             return model_output_original_shape, loss_terms
 

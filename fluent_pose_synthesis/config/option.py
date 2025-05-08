@@ -19,11 +19,13 @@ def add_train_args(parser):
     parser.add_argument('--epoch', type=int, default=300, help='Number of training epochs.')
     parser.add_argument('--lr', type=float, default=0.00005, help='Learning rate.')
     parser.add_argument('--lr_anneal_steps', type=int, default=0, help='Annealing steps.')
-    parser.add_argument('--weight_decay', type=float, default=0.98, help='Weight decay.')
+    parser.add_argument('--weight_decay', type=float, default=0.00, help='Weight decay.')
     parser.add_argument('--batch_size', type=int, default=1024, help='Batch size.')
     parser.add_argument('--cond_mask_prob', type=float, default=0, help='Conditioning mask probability.')
     parser.add_argument('--workers', type=int, default=4, help='Data loader workers.')
     parser.add_argument('--ema', default=False, type=bool, help='Use Exponential Moving Average (EMA) for model parameters.')
+    parser.add_argument('--lambda_vel', type=float, default=1.0, help='Weight factor for the velocity loss term.')
+    parser.add_argument('--load_num', type=int, default=-1, help='Number of models to load.')
 
 
 def config_parse(args):
@@ -51,6 +53,8 @@ def config_parse(args):
     config.trainer.cond_mask_prob = args.cond_mask_prob
     config.trainer.workers = args.workers
     config.trainer.save_freq = int(config.trainer.epoch // 5)
+    config.trainer.lambda_vel = args.lambda_vel
+    config.trainer.load_num = args.load_num
 
 
     # Save directory

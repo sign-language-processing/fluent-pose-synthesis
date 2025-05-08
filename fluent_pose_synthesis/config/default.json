@@ -25,8 +25,7 @@
         "cond_mask_prob": 0,
         "use_loss_mse": true,
         "use_loss_vel": true,
-        "use_loss_3d": true,
         "workers": 4,
-        "load_num": 50
+        "load_num": 200
     }
 }

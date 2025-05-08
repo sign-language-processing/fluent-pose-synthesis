@@ -1,11 +1,11 @@
 # Example usage:
 # python -m  fluent_pose_synthesis.infer_autoregressive \
 #   -i assets/sample_dataset \
-#   -c save/debug_run/new_model_auto_step32_with_500data_output/config.json \
-#   -r save/debug_run/new_model_auto_step32_with_500data_output/best.pt \
-#   -o save/debug_run/new_model_auto_step32_with_500data_output/infer_output \
+#   -c save/debug_run/weighted_auto_step32_with_200data_output/config.json \
+#   -r save/debug_run/weighted_auto_step32_with_200data_output/best.pt \
+#   -o save/debug_run/weighted_auto_step32_with_200data_output/infer_output \
 #   --batch_size 4 \
-#   --chunk_size 20 \
+#   --chunk_size 30 \
 #   --max_len 120 \
 #   --stop_threshold 1e-4 \
 #   --seed 1234
