@@ -1,0 +1,31 @@
+{
+    "document_id": "1419797",
+    "id": "1419797_a2743885",
+    "sentence": {
+        "id": "a2743885",
+        "start": 262360,
+        "end": 265060,
+        "english": "I take my hat off to him, he truly is terrific.",
+        "german": "Ich ziehe meinen Hut vor ihm, er ist richtig toll!",
+        "glosses": {
+            "gloss": [
+                "BRAVO2*",
+                "HUT-AB1",
+                "BRAVO2*",
+                "APPLAUS1"
+            ],
+            "start": [
+                262460,
+                263040,
+                263960,
+                264560
+            ],
+            "end": [
+                262700,
+                263420,
+                264220,
+                264700
+            ]
+        }
+    }
+}

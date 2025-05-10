@@ -1,0 +1,34 @@
+{
+    "document_id": "1431642-17445220-17471818",
+    "id": "1431642-17445220-17471818_a3952290",
+    "sentence": {
+        "id": "a3952290",
+        "start": 60040,
+        "end": 62560,
+        "english": "There was this one hearing guy who said, “Gee!",
+        "german": "Da war auch ein Hörender dabei, der meinte: „Ach, Mensch!",
+        "glosses": {
+            "gloss": [
+                "$NUM-EINER1A:1d",
+                "HÖREND1B",
+                "DABEI1B*",
+                "SAGEN1*",
+                "$GEST-ABWINKEN1^"
+            ],
+            "start": [
+                60320,
+                60700,
+                61120,
+                61680,
+                62120
+            ],
+            "end": [
+                60480,
+                60920,
+                61300,
+                61860,
+                62560
+            ]
+        }
+    }
+}

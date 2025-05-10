@@ -1,0 +1,40 @@
+{
+    "document_id": "1211515",
+    "id": "1211515_a3240034",
+    "sentence": {
+        "id": "a3240034",
+        "start": 92860,
+        "end": 96360,
+        "english": "The food was better than the stuff we got at school.",
+        "german": "Da hat man besseres Essen als im Heim bekommen.",
+        "glosses": {
+            "gloss": [
+                "BEKOMMEN3*",
+                "GUT1*",
+                "ESSEN1",
+                "ALS1",
+                "$INDEX1",
+                "HEIM1A*",
+                "$INDEX1"
+            ],
+            "start": [
+                92960,
+                93480,
+                93660,
+                94060,
+                94360,
+                94640,
+                94760
+            ],
+            "end": [
+                93260,
+                93520,
+                93960,
+                94180,
+                94460,
+                94720,
+                96180
+            ]
+        }
+    }
+}

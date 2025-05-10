@@ -29,7 +29,7 @@ def test_base_output_shape(arch, seq_len, batch_size):
 
     model = SignLanguagePoseDiffusion(
         input_feats=534,
-        clip_len=seq_len,
+        chunk_len=seq_len,
         keypoints=178,
         dims=3,
         latent_dim=256,

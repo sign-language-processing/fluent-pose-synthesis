@@ -1,0 +1,40 @@
+{
+    "document_id": "1413925",
+    "id": "1413925_a2795708",
+    "sentence": {
+        "id": "a2795708",
+        "start": 158440,
+        "end": 160660,
+        "english": "I was at home in the morning and saw it.",
+        "german": "Da war ich vormittags zu Hause und habe es gesehen.",
+        "glosses": {
+            "gloss": [
+                "VORMITTAG1",
+                "ICH1*",
+                "ZUHAUSE2*",
+                "ICH1",
+                "FERNBEDIENUNG1*",
+                "ZUSCHAUEN2*",
+                "$GEST^"
+            ],
+            "start": [
+                158660,
+                159000,
+                159140,
+                159600,
+                159780,
+                159960,
+                160400
+            ],
+            "end": [
+                158960,
+                159060,
+                159380,
+                159640,
+                159860,
+                160120,
+                160660
+            ]
+        }
+    }
+}

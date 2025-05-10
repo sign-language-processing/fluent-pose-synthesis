@@ -1,0 +1,31 @@
+{
+    "document_id": "1204691",
+    "id": "1204691_a2770164",
+    "sentence": {
+        "id": "a2770164",
+        "start": 136840,
+        "end": 138380,
+        "english": "I need to tell you something important.",
+        "german": "Ich muss dir etwas wichtiges sagen.",
+        "glosses": {
+            "gloss": [
+                "ICH1*",
+                "BESCHEID1A*",
+                "WICHTIG1*",
+                "WAS1A"
+            ],
+            "start": [
+                137080,
+                137280,
+                137620,
+                138000
+            ],
+            "end": [
+                137120,
+                137440,
+                137840,
+                138340
+            ]
+        }
+    }
+}

@@ -1,0 +1,28 @@
+{
+    "document_id": "1582654",
+    "id": "1582654_a2659401",
+    "sentence": {
+        "id": "a2659401",
+        "start": 590240,
+        "end": 592860,
+        "english": "Yes. It was my first time flying for such a long period of time, nine hours.",
+        "german": "Ja. Das war das erste Mal, dass ich so weit geflogen bin, neun Stunden.",
+        "glosses": {
+            "gloss": [
+                "ERSTES-MAL3C",
+                "WEIT-SEHR1",
+                "STUNDE2A*"
+            ],
+            "start": [
+                590480,
+                591120,
+                591700
+            ],
+            "end": [
+                590920,
+                591520,
+                592460
+            ]
+        }
+    }
+}

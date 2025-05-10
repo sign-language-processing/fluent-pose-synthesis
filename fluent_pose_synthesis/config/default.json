@@ -1,32 +1,31 @@
 {
     "arch": {
         "decoder": "trans_enc",
-        "latent_dim": 256,
-        "ff_size": 256,
+        "latent_dim": 512,
+        "ff_size": 1024,
         "num_heads": 4,
-        "num_layers": 2,
-        "clip_len": 40,
+        "num_layers": 8,
+        "chunk_len": 40,
         "keypoints": 178,
         "dims": 3,
-        "dropout": 0.1,
+        "dropout": 0.2,
         "activation": "gelu",
         "ablation": null,
         "legacy": false
     },
     "diff": {
         "noise_schedule": "cosine",
-        "diffusion_steps": 4,
+        "diffusion_steps": 32,
         "sigma_small": true
     },
     "trainer": {
-        "epoch": 50,
+        "epoch": 300,
         "lr": 1e-4,
-        "batch_size": 64,
-        "cond_mask_prob": 0.15,
+        "batch_size": 1024,
+        "cond_mask_prob": 0,
         "use_loss_mse": true,
         "use_loss_vel": true,
-        "use_loss_3d": true,
         "workers": 4,
-        "load_num": 64
+        "load_num": 200
     }
 }
