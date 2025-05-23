@@ -1,19 +1,26 @@
 # pylint: disable=protected-access, arguments-renamed
 from typing import Optional, Tuple, Dict, Any
+from pathlib import Path
+import itertools
 import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset
+from tqdm import tqdm
 
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
 from pose_format.utils.generic import normalize_pose_size
 from pose_anonymization.data.normalization import unnormalize_mean_std
+from pose_evaluation.metrics.distance_metric import DistanceMetric
+from pose_evaluation.metrics.dtw_metric import DTWDTAIImplementationDistanceMeasure
 
 from CAMDM.diffusion.gaussian_diffusion import GaussianDiffusion
 from CAMDM.network.training import BaseTrainingPortal
 from CAMDM.utils.common import mkdir
+from CAMDM.diffusion.resample import create_named_schedule_sampler
 
 
 def masked_l2_per_sample(x: Tensor, y: Tensor, mask: Optional[Tensor] = None, reduce: bool = True) -> Tensor:
@@ -32,21 +39,13 @@ def masked_l2_per_sample(x: Tensor, y: Tensor, mask: Optional[Tensor] = None, re
         mask = mask.bool()  # Ensure boolean type
         # Invert mask: False (valid) -> 1.0, True (masked) -> 0.0
         valid_mask_elements = (~mask).float()
-        # Apply mask to zero out loss contribution from invalid elements
         diff_sq = diff_sq * valid_mask_elements
     else:
-        # If no mask is provided, all elements are considered valid
         valid_mask_elements = torch.ones_like(diff_sq)
 
-    # Sum squared errors over all dimensions except batch for each sample
     per_sample_loss_sum = diff_sq.flatten(start_dim=1).sum(dim=1) # Shape: (B,)
 
-    # Count the number of valid elements for each sample
     valid_elements_count = valid_mask_elements.flatten(start_dim=1).sum(dim=1) # Shape: (B,)
-
-    # Compute mean squared error per sample
-    # Clamp denominator to avoid division by zero (0/0 = NaN).
-    # If valid_elements_count is 0, per_sample_loss_sum is also 0, resulting in 0 loss.
     per_sample_loss = per_sample_loss_sum / valid_elements_count.clamp(min=1) # Shape: (B,)
 
     if reduce:
@@ -63,10 +62,11 @@ class PoseTrainingPortal(BaseTrainingPortal):
         config: Any,
         model: torch.nn.Module,
         diffusion: GaussianDiffusion,
-        dataloader: DataLoader,
+        dataloader: DataLoader, # Training dataloader
         logger: Optional[Any],
         tb_writer: Optional[Any],
-        finetune_loader: Optional[DataLoader] = None,
+        validation_dataloader: Optional[DataLoader] = None,
+        prior_loader: Optional[DataLoader] = None
     ):
         """
         Training portal specialized for pose diffusion tasks.
@@ -77,13 +77,43 @@ class PoseTrainingPortal(BaseTrainingPortal):
             dataloader: The main training dataloader.
             logger: Logger instance (optional).
             tb_writer: TensorBoard writer (optional).
-            finetune_loader: Optional finetuning dataloader.
+            validation_dataloader: Optional validation dataloader.
+            prior_loader: Optional prior dataloader.
         """
         super().__init__(
-            config, model, diffusion, dataloader, logger, tb_writer, finetune_loader
+            config, model, diffusion, dataloader, logger, tb_writer, prior_loader
         )
         self.pose_header = None
         self.device = config.device
+        self.validation_dataloader = validation_dataloader
+        self.best_validation_metric = float('inf')
+
+        # Initialize DTW metric calculator
+        default_dtw_dist_val = 10.0
+        self.validation_metric_calculator = DistanceMetric(
+            name="Validation DTW",
+            distance_measure=DTWDTAIImplementationDistanceMeasure(
+                name="dtaiDTW",
+                use_fast=True,
+                default_distance=default_dtw_dist_val,
+            ),
+            pose_preprocessors=[],
+        )
+        self.logger.info(f"Initialized DTW metric with default_distance: {default_dtw_dist_val}")
+
+        # Store normalization statistics from the training dataset for unnormalization
+        self.data_input_mean = torch.tensor(dataloader.dataset.input_mean, device=self.device, dtype=torch.float32).squeeze()
+        self.data_input_std = torch.tensor(dataloader.dataset.input_std, device=self.device, dtype=torch.float32).squeeze()
+        # if self.data_input_mean.ndim == 1: # If it's flattened (K*D)
+        #         self.data_input_mean = self.data_input_mean.reshape(config.arch.keypoints, config.arch.dims)
+        #         self.data_input_std = self.data_input_std.reshape(config.arch.keypoints, config.arch.dims)
+        self.logger.info(f"Normalization stats (mean/std) loaded from training dataset. Mean shape: {self.data_input_mean.shape}")
+
+        # Store pose_header from validation dataset (for saving poses)
+        self.val_pose_header = self.validation_dataloader.dataset.pose_header
+        if self.val_pose_header:
+                 self.logger.info("Pose header loaded from validation dataset.")
+
 
     def diffuse(
         self,
@@ -128,7 +158,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
         # Permute output back to (B, T_chunk, K, D) for consistency if not calculating loss
         model_output_original_shape = model_output.permute(0, 3, 1, 2)
 
-
         # 5. Compute Loss (if requested)
         if return_loss:
             loss_terms = {}
@@ -171,17 +200,18 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # Use the already computed `mask` (shape B, K, D, T) where True=masked
             if self.config.trainer.use_loss_mse:
                 loss_data = masked_l2_per_sample(target, model_output, mask, reduce=True)
+                # loss_data = torch.nn.MSELoss()(model_output, target)
                 loss_terms["loss_data"] = loss_data
 
-            if self.config.trainer.use_loss_vel:
-                # Calculate velocity on time axis (last dimension)
-                target_vel = target[..., 1:] - target[..., :-1]
-                model_output_vel = model_output[..., 1:] - model_output[..., :-1]
-                # Create mask for velocity (same shape as velocity)
-                mask_vel = mask[..., 1:] if mask is not None else None
+            # if self.config.trainer.use_loss_vel:
+            #     # Calculate velocity on time axis (last dimension)
+            #     target_vel = target[..., 1:] - target[..., :-1]
+            #     model_output_vel = model_output[..., 1:] - model_output[..., :-1]
+            #     # Create mask for velocity (same shape as velocity)
+            #     mask_vel = mask[..., 1:] if mask is not None else None
 
-                loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
-                loss_terms["loss_data_vel"] = loss_data_vel
+            #     loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
+            #     loss_terms["loss_data_vel"] = loss_data_vel
 
             if hasattr(self.config.trainer, "lambda_vel"):
                 lambda_vel = self.config.trainer.lambda_vel
@@ -198,6 +228,317 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
         # If return_loss is False, just return the model output
         return model_output_original_shape, None
+
+
+    def _run_validation_epoch(self) -> Optional[float]:
+        """
+        Runs autoregressive inference on the validation set and computes the DTW metric.
+        Returns the average DTW score, or None if validation is not possible.
+        """
+        if self.validation_dataloader is None:
+            if self.logger: self.logger.info("Validation dataloader not provided. Skipping validation.")
+            return None
+
+        self.model.eval()
+        all_references_poses = []
+        all_predictions_poses = []
+
+        K = self.config.arch.keypoints
+        D_feat = self.config.arch.dims
+        history_len = getattr(self.config.arch, "history_len", 5)
+
+        # New config parameters for autoregressive validation
+        validation_max_len = getattr(self.config.trainer, "validation_max_len", 160) # Max frames to generate
+        validation_chunk_size = getattr(self.config.trainer, "validation_chunk_size", self.config.arch.chunk_len) # Frames per step
+        validation_stop_threshold = getattr(self.config.trainer, "validation_stop_threshold", 1e-4)
+
+        if self.logger: self.logger.info(
+            f"Starting validation (epoch {self.epoch}): max_len={validation_max_len}, "
+            f"chunk_size={validation_chunk_size}, history={history_len}, stop_thresh={validation_stop_threshold}"
+        )
+
+        with torch.no_grad():
+            for batch_idx, batch_data in enumerate(tqdm(self.validation_dataloader, desc="Validation Autoregressive")):
+                # Use the complete fluent reference sequence as the DTW reference
+                gt_fluent_full_loader = batch_data["full_fluent_reference"].to(self.device)  # (B, T_full, K, D)
+                T_gt_full = gt_fluent_full_loader.shape[1]
+
+                # Disfluent condition from loader (B, T_disfl, K, D)
+                disfluent_cond_seq_loader = batch_data["conditions"]["input_sequence"].to(self.device)
+                # Initial history from loader (B, T_hist_loader, K, D)
+                initial_history_loader = batch_data["conditions"]["previous_output"].to(self.device)
+
+                current_batch_size = gt_fluent_full_loader.shape[0]
+
+                # Prepare disfluent condition for model (B, K, D, T_disfl)
+                disfluent_cond_seq_model_fmt = disfluent_cond_seq_loader.permute(0, 2, 3, 1)
+
+                # Initialize generated sequence (model format: B, K, D, T_gen)
+                generated_fluent_seq_model_fmt = torch.empty(current_batch_size, K, D_feat, 0, device=self.device)
+
+                # Active sequences mask for stop condition handling
+                active_sequences = torch.ones(current_batch_size, dtype=torch.bool, device=self.device)
+
+                num_autoregressive_steps = (validation_max_len + validation_chunk_size - 1) // validation_chunk_size
+
+                # Use initial history from loader for the very first step's "previous_output"
+                current_history_for_model_input = initial_history_loader.permute(0, 2, 3, 1) # (B, K, D, T_hist_loader)
+                # Ensure history has the correct length `history_len`
+                if current_history_for_model_input.shape[3] > history_len:
+                    current_history_for_model_input = current_history_for_model_input[:, :, :, -history_len:]
+                elif current_history_for_model_input.shape[3] < history_len:
+                    padding_needed = history_len - current_history_for_model_input.shape[3]
+                    padding = torch.zeros(current_batch_size, K, D_feat, padding_needed, device=self.device)
+                    current_history_for_model_input = torch.cat([padding, current_history_for_model_input], dim=3)
+
+                for step in range(num_autoregressive_steps):
+                    if not active_sequences.any():
+                        if self.logger and batch_idx % 10 == 0 : self.logger.info(f"  Val Batch {batch_idx}: All sequences stopped generating at AR step {step}.")
+                        break
+
+                    current_generated_len = generated_fluent_seq_model_fmt.shape[3]
+                    if current_generated_len >= validation_max_len:
+                        break
+
+                    n_frames_to_generate_this_step = min(validation_chunk_size, validation_max_len - current_generated_len)
+                    if n_frames_to_generate_this_step <= 0:
+                        break
+
+                    target_shape_for_sampler = (current_batch_size, K, D_feat, n_frames_to_generate_this_step)
+
+                    model_kwargs_y = {
+                        "input_sequence": disfluent_cond_seq_model_fmt,
+                        "previous_output": current_history_for_model_input # (B, K, D, history_len)
+                    }
+                    model_kwargs_for_sampler = {"y": model_kwargs_y}
+
+                    class WrappedDiffusionModel(torch.nn.Module):
+                        def __init__(self, model_to_wrap):
+                            super().__init__()
+                            self.model_to_wrap = model_to_wrap
+                        def forward(self, x_noisy_chunk, t, **kwargs):
+                            return self.model_to_wrap.interface(x_noisy_chunk, t, y=kwargs["y"])
+
+                    wrapped_model = WrappedDiffusionModel(self.model)
+
+                    newly_generated_chunk_model_fmt = self.diffusion.p_sample_loop(
+                        model=wrapped_model,
+                        shape=target_shape_for_sampler,
+                        clip_denoised=getattr(self.config.diff, "clip_denoised", False),
+                        model_kwargs=model_kwargs_for_sampler,
+                        progress=False
+                    ) # Output: (B, K, D, n_frames_this_step)
+
+                    # Stop condition check (on active sequences only)
+                    if newly_generated_chunk_model_fmt.numel() > 0:
+                        mean_abs_for_chunk = torch.zeros(current_batch_size, device=self.device)
+                        active_idx = active_sequences.nonzero(as_tuple=True)[0]
+                        if active_idx.numel() > 0:
+                             mean_abs_for_chunk[active_idx] = newly_generated_chunk_model_fmt[active_idx].abs().mean(dim=(1,2,3))
+
+                        newly_stopped = (mean_abs_for_chunk < validation_stop_threshold) & active_sequences
+                        if newly_stopped.any():
+                            # Zero out the chunk for sequences that just stopped
+                            newly_generated_chunk_model_fmt[newly_stopped] = torch.zeros_like(newly_generated_chunk_model_fmt[newly_stopped])
+                            active_sequences = active_sequences & (~newly_stopped)
+                            if self.logger and batch_idx % 10 == 0:
+                                stopped_indices = newly_stopped.nonzero(as_tuple=True)[0].tolist()
+                                self.logger.info(f"  Val Batch {batch_idx}, AR step {step}: Sequences {stopped_indices} stopped.")
+
+                    # Append the newly generated chunk (already zeroed for stopped ones)
+                    generated_fluent_seq_model_fmt = torch.cat([generated_fluent_seq_model_fmt, newly_generated_chunk_model_fmt], dim=3)
+
+                    # Update history for the next step from the generated sequence
+                    if generated_fluent_seq_model_fmt.shape[3] >= history_len:
+                        current_history_for_model_input = generated_fluent_seq_model_fmt[:, :, :, -history_len:]
+                    else: # Still building up initial history from generated frames
+                        padding_needed = history_len - generated_fluent_seq_model_fmt.shape[3]
+                        padding = torch.zeros(current_batch_size, K, D_feat, padding_needed, device=self.device)
+                        current_history_for_model_input = torch.cat([padding, generated_fluent_seq_model_fmt], dim=3)
+
+                # Autoregressive loop finished for this batch
+
+                # Permute generated sequence to loader format (B, T_gen, K, D)
+                pred_fluent_full_normed_loader_fmt = generated_fluent_seq_model_fmt.permute(0, 3, 1, 2)
+
+                # New: Get the mean/std from the validation dataloader
+                val_dataset = self.validation_dataloader.dataset
+                val_input_mean_np = val_dataset.input_mean
+                val_input_std_np = val_dataset.input_std
+
+                val_mean_view = torch.tensor(val_input_mean_np, device=self.device, dtype=torch.float32)
+                val_std_view = torch.tensor(val_input_std_np, device=self.device, dtype=torch.float32)
+                if val_mean_view.numel() > 1:
+                    val_mean_view = val_mean_view.view(1,1,K,D_feat)
+                    val_std_view = val_std_view.view(1,1,K,D_feat)
+
+                # Unnormalize the GT fluent sequence using validation mean/std
+                gt_unnormed_btdk = gt_fluent_full_loader * val_std_view + val_mean_view
+
+                # Unnormalize the predicted fluent sequence using training mean/std
+                mean_view = self.data_input_mean.view(1,1,K,D_feat) if self.data_input_mean.numel() > 1 else self.data_input_mean
+                std_view = self.data_input_std.view(1,1,K,D_feat) if self.data_input_std.numel() > 1 else self.data_input_std
+                pred_fluent_full_unnormed_btdk = pred_fluent_full_normed_loader_fmt * std_view + mean_view
+
+
+                for i in range(current_batch_size):
+                    # Use the full prediction for comparison with the GT chunk
+                    # Ensure float64 and C-contiguity
+                    ref_np = np.ascontiguousarray(gt_unnormed_btdk[i].cpu().numpy(), dtype=np.float64)
+                    pred_np = np.ascontiguousarray(pred_fluent_full_unnormed_btdk[i].cpu().numpy(), dtype=np.float64)
+
+                    if self.val_pose_header:
+                        fps = self.val_pose_header.fps if hasattr(self.val_pose_header, 'fps') and self.val_pose_header.fps > 0 else 25.0
+                        ref_body = NumPyPoseBody(fps=fps, data=ref_np.reshape(ref_np.shape[0],1,K,D_feat), confidence=np.ones((ref_np.shape[0],1,K)))
+                        all_references_poses.append(Pose(self.val_pose_header, ref_body))
+                        pred_body = NumPyPoseBody(fps=fps, data=pred_np.reshape(pred_np.shape[0],1,K,D_feat), confidence=np.ones((pred_np.shape[0],1,K)))
+                        all_predictions_poses.append(Pose(self.val_pose_header, pred_body))
+                    else:
+                        print("Validation header missing, cannot evaluate DTW with pose-evaluation! Skipping sample.")
+                        continue
+
+        if not all_references_poses:
+            if self.logger: self.logger.warning("No poses collected during validation for DTW calculation.")
+            self.model.train()
+            return float('inf')
+
+        if self.logger: self.logger.info(f"Calculating DTW for {len(all_references_poses)} validation samples...")
+        dtw_score = float('inf')
+        try:
+            scores = [
+                self.validation_metric_calculator._pose_score(pred, ref)
+                for pred, ref in zip(all_predictions_poses, all_references_poses)
+            ]
+            dtw_score = float(np.mean(scores))
+            if self.logger: self.logger.info(f"=== Epoch {self.epoch} Validation DTW: {dtw_score:.4f} ===")
+            if self.tb_writer: self.tb_writer.add_scalar("validation/DTW_distance", dtw_score, self.epoch)
+        except Exception as e:
+            print(f"Error during DTW calculation: {e}")
+
+        self.model.train()
+        return dtw_score
+
+
+    # Override the run_loop method to include validation
+    def run_loop(self, enable_profiler=False, profiler_directory='./logs/tb_profiler'):
+        if enable_profiler:
+            profiler = torch.profiler.profile(
+                    activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+                    on_trace_ready=torch.profiler.tensorboard_trace_handler(profiler_directory))
+            profiler.start()
+        else:
+            profiler = None
+
+        sampling_num = 16
+        sampling_idx = np.random.randint(0, len(self.dataloader.dataset), sampling_num)
+        sampling_subset = DataLoader(Subset(self.dataloader.dataset, sampling_idx), batch_size=sampling_num)
+        self.evaluate_sampling(sampling_subset, save_folder_name='init_samples')
+
+        epoch_process_bar = tqdm(range(self.epoch, self.num_epochs), desc=f'Epoch {self.epoch}')
+        for epoch_idx in epoch_process_bar:
+            self.model.train()
+            self.model.training = True
+            self.epoch = epoch_idx
+            epoch_losses = {}
+
+            data_len = len(self.dataloader)
+
+            for datas in self.dataloader:
+                datas = {key: val.to(self.device) if torch.is_tensor(val) else val for key, val in datas.items()}
+                cond = {key: val.to(self.device) if torch.is_tensor(val) else val for key, val in datas['conditions'].items()}
+                x_start = datas['data']
+
+                self.opt.zero_grad()
+                t, weights = self.schedule_sampler.sample(x_start.shape[0], self.device)
+
+                _, losses = self.diffuse(x_start, t, cond, noise=None, return_loss=True)
+                total_loss = (losses["loss"] * weights).mean()
+                total_loss.backward()
+                self.opt.step()
+                if profiler:
+                    profiler.step()
+
+                if self.config.trainer.ema:
+                    self.ema.update()
+
+                for key_name in losses.keys():
+                    if 'loss' in key_name:
+                        if key_name not in epoch_losses.keys():
+                            epoch_losses[key_name] = []
+                        epoch_losses[key_name].append(losses[key_name].mean().item())
+
+            # Stop profiling after one epoch
+            if profiler:
+                profiler.stop()
+                profiler = None
+
+            if self.prior_loader is not None:
+                for prior_datas in itertools.islice(self.prior_loader, data_len):
+                    prior_datas = {key: val.to(self.device) if torch.is_tensor(val) else val for key, val in prior_datas.items()}
+                    prior_cond = {key: val.to(self.device) if torch.is_tensor(val) else val for key, val in prior_datas['conditions'].items()}
+                    prior_x_start = prior_datas['data']
+
+                    self.opt.zero_grad()
+                    t, weights = self.schedule_sampler.sample(prior_x_start.shape[0], self.device)
+
+                    _, prior_losses = self.diffuse(prior_x_start, t, prior_cond, noise=None, return_loss=True)
+                    total_loss = (prior_losses["loss"] * weights).mean()
+                    total_loss.backward()
+                    self.opt.step()
+
+                    for key_name in prior_losses.keys():
+                        if 'loss' in key_name:
+                            if key_name not in epoch_losses.keys():
+                                epoch_losses[key_name] = []
+                            epoch_losses[key_name].append(prior_losses[key_name].mean().item())
+
+            loss_str = ''
+            for key in epoch_losses.keys():
+                loss_str += f'{key}: {np.mean(epoch_losses[key]):.6f}, '
+
+            epoch_avg_loss = np.mean(epoch_losses['loss'])
+
+            if self.epoch > 10 and epoch_avg_loss < self.best_loss:
+                self.save_checkpoint(filename='best')
+
+            if epoch_avg_loss < self.best_loss:
+                self.best_loss = epoch_avg_loss
+
+            epoch_process_bar.set_description(f'Epoch {epoch_idx}/{self.config.trainer.epoch} | loss: {epoch_avg_loss:.6f} | best_loss: {self.best_loss:.6f}')
+            self.logger.info(f'Epoch {epoch_idx}/{self.config.trainer.epoch} | {loss_str} | best_loss: {self.best_loss:.6f}')
+
+            save_freq = max(1, int(getattr(self.config.trainer, "save_freq", 1)))
+            if epoch_idx > 0 and epoch_idx % save_freq == 0:
+                self.save_checkpoint(filename=f'weights_{epoch_idx}')
+                self.evaluate_sampling(sampling_subset, save_folder_name='train_samples')
+
+            for key_name in epoch_losses.keys():
+                if 'loss' in key_name:
+                    self.tb_writer.add_scalar(f'train/{key_name}', np.mean(epoch_losses[key_name]), epoch_idx)
+
+            self.scheduler.step()
+
+            # --- Validation Phase ---
+            eval_freq = getattr(self.config.trainer, "eval_freq", 10)
+            if self.validation_dataloader is not None and (
+                self.epoch % eval_freq == 0 or self.epoch == self.config.trainer.epoch - 1
+            ):
+                current_validation_metric = self._run_validation_epoch()
+                # Log the validation metric to TensorBoard
+                if self.tb_writer and current_validation_metric is not None:
+                    self.tb_writer.add_scalar("validation/DTW_distance", current_validation_metric, self.epoch)
+                # If the metric is better, save the best model
+                if current_validation_metric is not None and current_validation_metric < self.best_validation_metric:
+                    self.best_validation_metric = current_validation_metric
+                    self.logger.info(
+                        f"*** New best validation metric: {self.best_validation_metric:.4f} at epoch {self.epoch}. Saving best model. ***"
+                    )
+                    self.save_checkpoint(filename="best_model_validation")
+
+        best_path = '%s/best.pt' % (self.config.save)
+        self.load_checkpoint(best_path)
+        self.evaluate_sampling(sampling_subset, save_folder_name='best')
+
 
     def evaluate_sampling(
         self, dataloader: DataLoader, save_folder_name: str = "init_samples"
@@ -250,15 +591,18 @@ class PoseTrainingPortal(BaseTrainingPortal):
         fluent_clip_array = fluent_clip.cpu().numpy()
         pred_output_array = pred_output_tensor.cpu().numpy()
 
-        unnormed_gt_list = self.export_samples(fluent_clip_array, f"{self.save_dir}/{save_folder_name}", "gt")
-        unnormed_pred_list = self.export_samples(pred_output_array, f"{self.save_dir}/{save_folder_name}", "pred")
+        unnormed_fluent_clip = fluent_clip_array * dataset.input_std + dataset.input_mean
+        unnormed_pred_output = pred_output_array * dataset.input_std + dataset.input_mean
+
+        self.export_samples(unnormed_fluent_clip, f"{self.save_dir}/{save_folder_name}", "gt")
+        self.export_samples(unnormed_pred_output, f"{self.save_dir}/{save_folder_name}", "pred")
 
         # Save the normalized fluent clip and predicted output as numpy arrays
         np.save(f"{self.save_dir}/{save_folder_name}/gt_output_normed.npy", fluent_clip_array)
         np.save(f"{self.save_dir}/{save_folder_name}/pred_output_normed.npy", pred_output_array)
         # Save the unnormalized fluent clip and predicted output as numpy arrays
-        unormed_gt_batch = np.stack(unnormed_gt_list, axis=0) # (B, T, K, D)
-        unormed_pred_batch = np.stack(unnormed_pred_list, axis=0) # (B, T, K, D)
+        unormed_gt_batch = np.stack(unnormed_fluent_clip, axis=0) # (B, T, K, D)
+        unormed_pred_batch = np.stack(unnormed_pred_output, axis=0) # (B, T, K, D)
         np.save(f"{self.save_dir}/{save_folder_name}/gt_output.npy", unormed_gt_batch)
         np.save(f"{self.save_dir}/{save_folder_name}/pred_output.npy", unormed_pred_batch)
 
@@ -267,7 +611,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
         else:
             print(f"Evaluate sampling {save_folder_name} at epoch {self.epoch}")
 
-    def export_samples(self, pose_output_normalized_np: np.ndarray, save_path: str, prefix: str) -> list:
+    def export_samples(self, pose_output_np: np.ndarray, save_path: str, prefix: str) -> list:
         """
         Unnormalizes pose data using unnormalize_mean_std, exports to .pose format, and returns the unnormalized numpy data.
         Args:
@@ -277,9 +621,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
         """
         unnormalized_arrays = [] # Store unnormalized arrays here
 
-        for i in range(pose_output_normalized_np.shape[0]):
+        for i in range(pose_output_np.shape[0]):
 
-            pose_array = pose_output_normalized_np[i] # (time, keypoints, 3)
+            pose_array = pose_output_np[i] # (time, keypoints, 3)
             time, keypoints, dim = pose_array.shape
             pose_array = pose_array.reshape(time, 1, keypoints, dim)
 
@@ -291,13 +635,13 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pose_obj = Pose(self.pose_header, pose_body)
 
             # Unnormalize the pose data and normalize its size for export
-            unnorm_pose = unnormalize_mean_std(pose_obj)
+            # unnorm_pose = unnormalize_mean_std(pose_obj)
             # Scale the pose back for visualization
-            normalize_pose_size(unnorm_pose)
+            # normalize_pose_size(unnorm_pose)
 
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:
-                unnorm_pose.write(f)
+                pose_obj.write(f)
             # self.logger.info(f"Saved pose file: {file_path}")
 
 
@@ -306,9 +650,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 Pose.read(f_check.read())
 
             # Extract and store the unnormalized numpy data
-            unnorm_data_np = np.array(unnorm_pose.body.data.data.astype(pose_output_normalized_np.dtype)).squeeze(1) # (T, K, D)
-            unnormalized_arrays.append(unnorm_data_np)
+            # unnorm_data_np = np.array(unnorm_pose.body.data.data.astype(pose_output_normalized_np.dtype)).squeeze(1) # (T, K, D)
+            # unnormalized_arrays.append(unnorm_data_np)
 
             # If error occurs, the file was not written correctly
             # self.logger.info(f"Pose file {file_path} read successfully.")
-        return unnormalized_arrays
+        return True

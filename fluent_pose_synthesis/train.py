@@ -1,7 +1,13 @@
 import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
 import time
 import shutil
 import argparse
+import json
 from pathlib import Path, PosixPath
 from types import SimpleNamespace
 
@@ -17,6 +23,7 @@ from CAMDM.utils.logger import Logger
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
 from fluent_pose_synthesis.data.load_data import SignLanguagePoseDataset
+
 from fluent_pose_synthesis.config.option import (
     add_model_args,
     add_train_args,
@@ -55,15 +62,16 @@ def train(
     fixseed(1024)
     np_dtype = select_platform(32)
 
-    logger.info("Loading dataset...")
+    # Training Dataset and Dataloader
+    logger.info("Loading training dataset...")
     train_dataset = SignLanguagePoseDataset(
         data_dir=config.data,
         split="train",
         chunk_len=config.arch.chunk_len,
+        history_len=getattr(config.arch, "history_len", 5),
         dtype=np_dtype,
         limited_num=config.trainer.load_num,
     )
-
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=config.trainer.batch_size,
@@ -73,12 +81,35 @@ def train(
         pin_memory=True,
         collate_fn=zero_pad_collator,
     )
-
     logger.info(
         f"Training Dataset includes {len(train_dataset)} samples, "
         f"with {config.arch.chunk_len} fluent frames per sample."
     )
 
+    # Validation Dataset and Dataloader
+    logger.info("Loading validation dataset...")
+    validation_dataset = SignLanguagePoseDataset(
+        data_dir=config.data,
+        split="validation",
+        chunk_len=config.arch.chunk_len,
+        history_len=getattr(config.arch, "history_len", 5),
+        dtype=np_dtype,
+        limited_num=config.trainer.load_num
+    )
+    validation_dataloader = DataLoader(
+        validation_dataset,
+        batch_size=config.trainer.batch_size,
+        shuffle=False, # No need to shuffle validation data
+        num_workers=config.trainer.workers,
+        drop_last=False,
+        pin_memory=True,
+        collate_fn=zero_pad_collator,
+    )
+    logger.info(
+        f"Validation Dataset includes {len(validation_dataset)} samples."
+    )
+
+    # Model and Diffusion Initialization
     diffusion = create_gaussian_diffusion(config)
     input_feats = config.arch.keypoints * config.arch.dims
 
@@ -101,8 +132,10 @@ def train(
     ).to(config.device)
 
     logger.info(f"Model: {model}")
+
+    # Training Portal Initialization
     trainer = PoseTrainingPortal(
-        config, model, diffusion, train_dataloader, logger, tb_writer
+        config, model, diffusion, train_dataloader, logger, tb_writer, validation_dataloader=validation_dataloader
     )
 
     if resume_path is not None:
@@ -112,7 +145,13 @@ def train(
             print(f"No checkpoint found at {resume_path}")
             sys.exit(1)
 
-    trainer.run_loop()
+    custom_profiler_directory = config.save / "profiler_logs"
+    custom_profiler_directory.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Profiler output will be directed to: {custom_profiler_directory}")
+
+    trainer.run_loop(enable_profiler=True, profiler_directory=str(custom_profiler_directory))
+    # trainer.run_loop()
 
 
 def main():
@@ -134,8 +173,7 @@ def main():
     parser.add_argument(
         "-i",
         "--data",
-        default="assets/sample_dataset",
-        # default="/pose_data/output",
+        default="/pose_data/output",
         type=str,
         help="Path to dataset folder",
     )
@@ -156,7 +194,6 @@ def main():
     add_train_args(parser)
 
     args = parser.parse_args()
-
     config = config_parse(args)
 
     # Convert key paths to Path objects
@@ -207,11 +244,27 @@ def main():
 
     # Save config
     with open(config.save / "config.json", "w", encoding="utf-8") as f:
-        f.write(str(config))
+        # Convert SimpleNamespace to dict for JSON serialization
+        json.dump(config_to_dict(config), f, indent=4)
+        logger.info(f"Saved final configuration to {config.save / 'config.json'}")
 
     logger.info(f"\nLaunching training with config:\n{config}")
     train(config, resume_path, logger, tb_writer)
     logger.info(f"\nTotal training time: {(time.time() - start_time) / 60:.2f} mins")
+
+
+def config_to_dict(config_namespace):
+    """Helper to convert SimpleNamespace (recursively) to dict for JSON."""
+    if isinstance(config_namespace, SimpleNamespace):
+        return {k: config_to_dict(v) for k, v in vars(config_namespace).items()}
+    elif isinstance(config_namespace, Path):
+        return str(config_namespace)
+    elif isinstance(config_namespace, (list, tuple)):
+        return [config_to_dict(i) for i in config_namespace]
+    elif isinstance(config_namespace, torch.device):
+        return str(config_namespace)
+    else:
+        return config_namespace
 
 
 if __name__ == "__main__":

@@ -12,17 +12,17 @@ def add_model_args(parser):
 
 def add_diffusion_args(parser):
     parser.add_argument('--noise_schedule', type=str, default='cosine', help='Noise schedule: "cosine", "linear", etc.')
-    parser.add_argument('--diffusion_steps', type=int, default=4, help='Number of diffusion steps.')
+    parser.add_argument('--diffusion_steps', type=int, default=8, help='Number of diffusion steps.')
     parser.add_argument('--sigma_small', action='store_true', help='Use small sigma values.')
 
 def add_train_args(parser):
-    parser.add_argument('--epoch', type=int, default=300, help='Number of training epochs.')
+    parser.add_argument('--epoch', type=int, default=500, help='Number of training epochs.')
     parser.add_argument('--lr', type=float, default=0.00005, help='Learning rate.')
     parser.add_argument('--lr_anneal_steps', type=int, default=0, help='Annealing steps.')
-    parser.add_argument('--weight_decay', type=float, default=0.00, help='Weight decay.')
+    parser.add_argument('--weight_decay', type=float, default=0.001, help='Weight decay.')
     parser.add_argument('--batch_size', type=int, default=1024, help='Batch size.')
     parser.add_argument('--cond_mask_prob', type=float, default=0, help='Conditioning mask probability.')
-    parser.add_argument('--workers', type=int, default=4, help='Data loader workers.')
+    parser.add_argument('--workers', type=int, default=8, help='Data loader workers.')
     parser.add_argument('--ema', default=False, type=bool, help='Use Exponential Moving Average (EMA) for model parameters.')
     parser.add_argument('--lambda_vel', type=float, default=1.0, help='Weight factor for the velocity loss term.')
     parser.add_argument('--load_num', type=int, default=-1, help='Number of models to load.')

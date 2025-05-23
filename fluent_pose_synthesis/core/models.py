@@ -127,7 +127,7 @@ class SignLanguagePoseDiffusion(nn.Module):
 
         # Pose projection: projects latent representation back to pose space.
         # The OutputProcess returns (B, keypoints, dims, T); apply a post_transform to get (B, T, keypoints, dims)
-        self.pose_projection = OutputProcessMLP(input_feats, latent_dim, keypoints, dims, hidden_dim=512)
+        self.pose_projection = OutputProcessMLP(input_feats, latent_dim, keypoints, dims, hidden_dim=1024)
         self.to(self.device)
 
     def forward(
@@ -248,25 +248,6 @@ class SignLanguagePoseDiffusion(nn.Module):
         # print("--- Exiting SignLanguagePoseDiffusion Forward ---\n")
 
         return output
-
-
-    # def mingyi_forward(
-    #     self, fluent_clip: torch.Tensor, disfluent_seq: torch.Tensor, t: torch.Tensor
-    # ) -> torch.Tensor:
-
-    #     batch_size, keypoints, dims, time = fluent_clip.shape
-
-    #     t_emb = self.embed_timestep(t)
-    #     disfluent_emb = self.disfluent_encoder(disfluent_seq)
-    #     fluent_emb = self.fluent_encoder(fluent_clip)
-
-    #     xseq = torch.cat((t_emb, disfluent_emb, fluent_emb), axis=0)
-    #     xseq = self.sequence_pos_encoder(xseq)
-
-    #     x_out = self.sequence_encoder(xseq)[:time]
-    #     output = self.pose_projection(x_out)
-
-    #     return output
 
     def interface(
         self,

@@ -11,21 +11,26 @@
         "dropout": 0.2,
         "activation": "gelu",
         "ablation": null,
-        "legacy": false
+        "legacy": false,
+        "history_len": 5
     },
     "diff": {
         "noise_schedule": "cosine",
-        "diffusion_steps": 32,
+        "diffusion_steps": 8,
         "sigma_small": true
     },
     "trainer": {
-        "epoch": 300,
+        "epoch": 500,
         "lr": 1e-4,
         "batch_size": 1024,
         "cond_mask_prob": 0,
         "use_loss_mse": true,
         "use_loss_vel": true,
-        "workers": 4,
-        "load_num": 200
+        "workers": 8,
+        "load_num": -1,
+        "validation_max_len": 160,
+        "validation_chunk_size": 40,
+        "validation_stop_threshold": 1e-4,
+        "eval_freq": 10
     }
 }
