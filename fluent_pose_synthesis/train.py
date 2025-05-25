@@ -1,8 +1,5 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 
 import time
 import shutil
@@ -32,23 +29,25 @@ from fluent_pose_synthesis.config.option import (
 )
 
 # Add custom globals to torch.serialization
-torch.serialization.add_safe_globals(
-    [
-        SimpleNamespace,
-        PosixPath,
-        np.int64,
-        np.int32,
-        np.float64,
-        np.float32,
-        np.bool_,
-    ]
-)
+torch.serialization.add_safe_globals([
+    SimpleNamespace,
+    PosixPath,
+    np.int64,
+    np.int32,
+    np.float64,
+    np.float32,
+    np.bool_,
+])
 # Patch torch.load to avoid loading weights only
 # This is a workaround for the issue where torch.load tries to load weights only
 _original_torch_load = torch.load
+
+
 def patched_torch_load(*args, **kwargs):
     kwargs.setdefault("weights_only", False)
     return _original_torch_load(*args, **kwargs)
+
+
 torch.load = patched_torch_load
 
 
@@ -81,33 +80,25 @@ def train(
         pin_memory=True,
         collate_fn=zero_pad_collator,
     )
-    logger.info(
-        f"Training Dataset includes {len(train_dataset)} samples, "
-        f"with {config.arch.chunk_len} fluent frames per sample."
-    )
+    logger.info(f"Training Dataset includes {len(train_dataset)} samples, "
+                f"with {config.arch.chunk_len} fluent frames per sample.")
 
     # Validation Dataset and Dataloader
     logger.info("Loading validation dataset...")
-    validation_dataset = SignLanguagePoseDataset(
-        data_dir=config.data,
-        split="validation",
-        chunk_len=config.arch.chunk_len,
-        history_len=getattr(config.arch, "history_len", 5),
-        dtype=np_dtype,
-        limited_num=config.trainer.load_num
-    )
+    validation_dataset = SignLanguagePoseDataset(data_dir=config.data, split="validation",
+                                                 chunk_len=config.arch.chunk_len,
+                                                 history_len=getattr(config.arch, "history_len", 5), dtype=np_dtype,
+                                                 limited_num=config.trainer.load_num)
     validation_dataloader = DataLoader(
         validation_dataset,
         batch_size=config.trainer.batch_size,
-        shuffle=False, # No need to shuffle validation data
+        shuffle=False,  # No need to shuffle validation data
         num_workers=config.trainer.workers,
         drop_last=False,
         pin_memory=True,
         collate_fn=zero_pad_collator,
     )
-    logger.info(
-        f"Validation Dataset includes {len(validation_dataset)} samples."
-    )
+    logger.info(f"Validation Dataset includes {len(validation_dataset)} samples.")
 
     # Model and Diffusion Initialization
     diffusion = create_gaussian_diffusion(config)
@@ -134,9 +125,8 @@ def train(
     logger.info(f"Model: {model}")
 
     # Training Portal Initialization
-    trainer = PoseTrainingPortal(
-        config, model, diffusion, train_dataloader, logger, tb_writer, validation_dataloader=validation_dataloader
-    )
+    trainer = PoseTrainingPortal(config, model, diffusion, train_dataloader, logger, tb_writer,
+                                 validation_dataloader=validation_dataloader)
 
     if resume_path is not None:
         try:
@@ -157,12 +147,8 @@ def train(
 def main():
     start_time = time.time()
 
-    parser = argparse.ArgumentParser(
-        description="### Fluent Sign Language Pose Synthesis Training ###"
-    )
-    parser.add_argument(
-        "-n", "--name", default="debug", type=str, help="The name of this training run"
-    )
+    parser = argparse.ArgumentParser(description="### Fluent Sign Language Pose Synthesis Training ###")
+    parser.add_argument("-n", "--name", default="debug", type=str, help="The name of this training run")
     parser.add_argument(
         "-c",
         "--config",
@@ -177,9 +163,7 @@ def main():
         type=str,
         help="Path to dataset folder",
     )
-    parser.add_argument(
-        "-r", "--resume", default=None, type=str, help="Path to latest checkpoint"
-    )
+    parser.add_argument("-r", "--resume", default=None, type=str, help="Path to latest checkpoint")
     parser.add_argument(
         "-s",
         "--save",
@@ -212,12 +196,7 @@ def main():
         config.trainer.epoch = 2000
 
     # Handle existing folder
-    if (
-        not args.cluster
-        and config.save.exists()
-        and "debug" not in args.name
-        and args.resume is None
-    ):
+    if (not args.cluster and config.save.exists() and "debug" not in args.name and args.resume is None):
         allow_cover = input("Model folder exists. Overwrite? (Y/N): ").lower()
         if allow_cover == "n":
             sys.exit(0)

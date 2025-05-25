@@ -11,9 +11,12 @@ from torch.utils.data import Dataset
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_anonymization.data.normalization import normalize_mean_std
+import pickle
+import hashlib
 
 
 class SignLanguagePoseDataset(Dataset):
+
     def __init__(
         self,
         data_dir: Path,
@@ -22,6 +25,9 @@ class SignLanguagePoseDataset(Dataset):
         dtype=np.float32,
         history_len: int = 5,
         limited_num: int = -1,
+        use_cache: bool = True,
+        cache_dir: Path = None,
+        force_reload: bool = False,
     ):
         """
         Args:
@@ -38,6 +44,41 @@ class SignLanguagePoseDataset(Dataset):
         self.window_len = chunk_len + history_len
         self.dtype = dtype
 
+        # Cache controls
+        self.use_cache = use_cache
+        self.force_reload = force_reload
+        # Determine cache directory
+        if cache_dir is None:
+            self.cache_dir = self.data_dir / "cache"
+        else:
+            self.cache_dir = cache_dir
+        self.cache_dir.mkdir(exist_ok=True)
+        # Collect data file mtimes for invalidation
+        split_dir = self.data_dir / self.split
+        all_files = list(split_dir.glob(f"{split}_*_original.pose")) + \
+                    list(split_dir.glob(f"{split}_*_updated.pose")) + \
+                    list(split_dir.glob(f"{split}_*_metadata.json"))
+        mtimes = [f.stat().st_mtime for f in all_files if f.exists()]
+        data_mtime = max(mtimes) if mtimes else 0
+        # Build cache key
+        cache_params = {
+            'data_dir': str(data_dir),
+            'split': split,
+            'chunk_len': chunk_len,
+            'history_len': history_len,
+            'dtype': str(dtype),
+            'limited_num': limited_num,
+            'data_mtime': data_mtime,
+        }
+        cache_key = hashlib.md5(str(cache_params).encode()).hexdigest()
+        self.cache_file = self.cache_dir / f"dataset_cache_{split}_{cache_key}.pkl"
+        # Try loading from cache
+        if self.use_cache and not self.force_reload and self.cache_file.exists():
+            print(f"Loading dataset from cache: {self.cache_file}")
+            self._load_from_cache()
+            print(f"Dataset loaded from cache: {len(self.examples)} samples, split={split}")
+            return
+
         # Store only file paths for now, load data on-the-fly
         # Each sample should have fluent (original), disfluent (updated), and metadata files
         self.examples = []
@@ -50,13 +91,11 @@ class SignLanguagePoseDataset(Dataset):
             # Construct corresponding disfluent and metadata file paths based on the file name
             disfluent_file = fluent_file.with_name(fluent_file.name.replace("_original.pose", "_updated.pose"))
             metadata_file = fluent_file.with_name(fluent_file.name.replace("_original.pose", "_metadata.json"))
-            self.examples.append(
-                {
-                    "fluent_path": fluent_file,
-                    "disfluent_path": disfluent_file,
-                    "metadata_path": metadata_file,
-                }
-            )
+            self.examples.append({
+                "fluent_path": fluent_file,
+                "disfluent_path": disfluent_file,
+                "metadata_path": metadata_file,
+            })
 
         # Initialize pose_header from the first fluent .pose file
         if self.examples:
@@ -77,7 +116,8 @@ class SignLanguagePoseDataset(Dataset):
 
         self.train_indices = []
 
-        for example_idx, example in enumerate(self.examples):
+        for example_idx, example in enumerate(
+                tqdm(self.examples, desc=f"Processing pose files for {split}", total=len(self.examples))):
             with open(example["fluent_path"], "rb") as f:
                 fluent_pose = Pose.read(f.read())
             with open(example["disfluent_path"], "rb") as f:
@@ -95,20 +135,30 @@ class SignLanguagePoseDataset(Dataset):
         if self.split == "validation":
             self.train_indices = np.arange(len(self.examples)).reshape(-1, 1)
         else:
-            for example_idx, example in enumerate(tqdm(self.examples, desc=f"Building indices for {split}")):
+            for example_idx, example in enumerate(
+                    tqdm(self.examples, desc=f"Building indices for {split}", total=len(self.examples))):
                 fluent_data = self.fluent_clip_list[example_idx]
                 fluent_length = fluent_data.shape[0]
 
                 if fluent_length >= self.chunk_len:
                     zero_indices = np.array([-1] * self.history_len + list(range(self.chunk_len))).reshape(1, -1)
-                    clip_indices = np.arange(0, fluent_length - self.window_len + 1, 1)[:, None] + np.arange(self.window_len)
+                    clip_indices = np.arange(0, fluent_length - self.window_len + 1, 1)[:, None] + np.arange(
+                        self.window_len)
                     clip_indices = np.concatenate((zero_indices, clip_indices), axis=0)
-                    clip_indices_with_idx = np.hstack((np.full((len(clip_indices), 1), example_idx, dtype=clip_indices.dtype), clip_indices))
+                    clip_indices_with_idx = np.hstack((
+                        np.full(
+                            (len(clip_indices), 1),
+                            example_idx,
+                            dtype=clip_indices.dtype,
+                        ),
+                        clip_indices,
+                    ))
                 else:
-                    zero_indices = np.array([-1] * self.history_len + list(range(fluent_length)) + [-2] * (self.chunk_len - fluent_length)).reshape(1, -1)
+                    zero_indices = np.array([-1] * self.history_len + list(range(fluent_length)) + [-2] *
+                                            (self.chunk_len - fluent_length)).reshape(1, -1)
                     clip_indices_list = []
                     for i in range(self.window_len):
-                        is_history_part = (i < self.history_len)
+                        is_history_part = i < self.history_len
                         if i < fluent_length:
                             clip_indices_list.append(i)
                         else:
@@ -118,26 +168,75 @@ class SignLanguagePoseDataset(Dataset):
                                 clip_indices_list.append(-2)
                     clip_indices = np.array(clip_indices_list).reshape(1, -1)
                     clip_indices = np.concatenate((zero_indices, clip_indices), axis=0)
-                    clip_indices_with_idx = np.hstack((np.full((len(clip_indices), 1), example_idx, dtype=clip_indices.dtype), clip_indices))
+                    clip_indices_with_idx = np.hstack((
+                        np.full(
+                            (len(clip_indices), 1),
+                            example_idx,
+                            dtype=clip_indices.dtype,
+                        ),
+                        clip_indices,
+                    ))
 
                 self.train_indices.append(clip_indices_with_idx)
 
             self.train_indices = np.concatenate(self.train_indices, axis=0)
 
         concatenated_fluent_clips = np.concatenate(self.fluent_clip_list, axis=0)
-        self.input_mean = concatenated_fluent_clips.mean(axis=0, keepdims=True) # axis=0
-        self.input_std  = concatenated_fluent_clips.std(axis=0, keepdims=True)
+        self.input_mean = concatenated_fluent_clips.mean(axis=0, keepdims=True)  # axis=0
+        self.input_std = concatenated_fluent_clips.std(axis=0, keepdims=True)
 
         concatenated_disfluent_clips = np.concatenate(self.disfluent_clip_list, axis=0)
         self.condition_mean = concatenated_disfluent_clips.mean(axis=0, keepdims=True)
-        self.condition_std  = concatenated_disfluent_clips.std(axis=0, keepdims=True)
+        self.condition_std = concatenated_disfluent_clips.std(axis=0, keepdims=True)
 
         for i in range(len(self.examples)):
             self.fluent_clip_list[i] = (self.fluent_clip_list[i] - self.input_mean) / self.input_std
             self.disfluent_clip_list[i] = (self.disfluent_clip_list[i] - self.condition_mean) / self.condition_std
 
+        # Save cache for future runs
+        if self.use_cache:
+            print(f"Saving dataset to cache: {self.cache_file}")
+            self._save_to_cache()
         print("Dataset initialized with {} samples. Split: {}".format(len(self.examples), split))
 
+    def _save_to_cache(self):
+        """Serialize dataset to cache file."""
+        data = {
+            'examples': self.examples,
+            'pose_header': self.pose_header,
+            'fluent_clip_list': self.fluent_clip_list,
+            'fluent_mask_list': self.fluent_mask_list,
+            'disfluent_clip_list': self.disfluent_clip_list,
+            'train_indices': self.train_indices,
+            'input_mean': self.input_mean,
+            'input_std': self.input_std,
+            'condition_mean': self.condition_mean,
+            'condition_std': self.condition_std,
+        }
+        try:
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as e:
+            print(f"[WARNING] Failed to save cache: {e}")
+
+    def _load_from_cache(self):
+        """Load dataset from cache file."""
+        try:
+            with open(self.cache_file, 'rb') as f:
+                data = pickle.load(f)
+            self.examples = data['examples']
+            self.pose_header = data['pose_header']
+            self.fluent_clip_list = data['fluent_clip_list']
+            self.fluent_mask_list = data['fluent_mask_list']
+            self.disfluent_clip_list = data['disfluent_clip_list']
+            self.train_indices = data['train_indices']
+            self.input_mean = data['input_mean']
+            self.input_std = data['input_std']
+            self.condition_mean = data['condition_mean']
+            self.condition_std = data['condition_std']
+        except Exception as e:
+            print(f"[WARNING] Failed to load cache, rebuilding: {e}")
+            # Fall back to fresh build
 
     def __len__(self) -> int:
         """
@@ -160,7 +259,7 @@ class SignLanguagePoseDataset(Dataset):
             # Construct previous_output for validation
             history_len = self.history_len
             num_keypoints = self.fluent_clip_list[motion_idx].shape[1]  # K
-            num_dims = self.fluent_clip_list[motion_idx].shape[2]      # D
+            num_dims = self.fluent_clip_list[motion_idx].shape[2]  # D
 
             # Create a zero tensor for previous_output
             # Its shape should be (history_len, K, D)
@@ -169,10 +268,10 @@ class SignLanguagePoseDataset(Dataset):
             result = {
                 "data": full_seq,  # Full sequence, mainly used as reference for validation metrics
                 "conditions": {
-                    "input_sequence": disfluent_seq,    # Disfluent sequence as condition
-                    "previous_output": previous_output, # Now the initial history is all zeros
+                    "input_sequence": disfluent_seq,  # Disfluent sequence as condition
+                    "previous_output": previous_output,  # Now the initial history is all zeros
                 },
-                "full_fluent_reference": full_seq, # Full reference for DTW evaluation
+                "full_fluent_reference": full_seq,  # Full reference for DTW evaluation
                 "metadata": {"original_example_index": int(motion_idx)},
             }
             return result
@@ -199,36 +298,36 @@ class SignLanguagePoseDataset(Dataset):
         target_chunk = np.stack(target_chunk_frames, axis=0)
         target_mask = np.stack(target_mask_frames, axis=0)
 
-        history_chunk[history_indices==-1].fill(0)
+        history_chunk[history_indices == -1].fill(0)
 
         # Convert numpy arrays to torch tensors
         target_chunk = torch.from_numpy(target_chunk.astype(np.float32))
         history_chunk = torch.from_numpy(history_chunk.astype(np.float32))
         disfluent_seq = torch.from_numpy(disfluent_seq.astype(np.float32))
-        target_mask = torch.from_numpy(target_mask) # Bool tensor
+        target_mask = torch.from_numpy(target_mask)  # Bool tensor
 
         # Create conditions dictionary
         conditions = {
-            "input_sequence": disfluent_seq,     # (T_disfl, K, D)
-            "previous_output": history_chunk,    # (T_hist, K, D)
-            "target_mask": target_mask           # (T_chunk, K, D)
+            "input_sequence": disfluent_seq,  # (T_disfl, K, D)
+            "previous_output": history_chunk,  # (T_hist, K, D)
+            "target_mask": target_mask,  # (T_chunk, K, D)
         }
 
         # Get motion_idx, which points to the original sample index in self.examples
-        item_frame_indice = self.train_indices[idx] # Assume split is not 'test', or test also uses train_indices
+        item_frame_indice = self.train_indices[idx]  # Assume split is not 'test', or test also uses train_indices
         motion_idx = item_frame_indice[0]
 
         # Create metadata dictionary
         metadata = {
-            "original_example_index": int(motion_idx), # Ensure it is Python int type
-            "original_disfluent_filepath": str(self.examples[motion_idx]["disfluent_path"])
+            "original_example_index": int(motion_idx),  # Ensure it is Python int type
+            "original_disfluent_filepath": str(self.examples[motion_idx]["disfluent_path"]),
         }
 
         # Build base return dictionary
         result = {
-            "data": target_chunk,   # (T_chunk, K, D)
+            "data": target_chunk,  # (T_chunk, K, D)
             "conditions": conditions,
-            "metadata": metadata
+            "metadata": metadata,
         }
         # If validation set, append full fluent reference sequence
         if self.split == "validation":
@@ -265,7 +364,7 @@ def example_dataset():
 
     batch = next(iter(dataloader))
     print("Batch Keys:", batch.keys())
-    print("Conditions Keys:", batch['conditions'].keys())
+    print("Conditions Keys:", batch["conditions"].keys())
 
     print("\nShapes:")
     print(f"  data (Target Chunk): {batch['data'].shape}")

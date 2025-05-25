@@ -9,22 +9,19 @@ class OutputProcessMLP(nn.Module):
     """
     Output process for the Sign Language Pose Diffusion model.
     """
-    def __init__(self, input_feats, latent_dim, njoints, nfeats, hidden_dim=512): # add hidden_dim as parameter
+
+    def __init__(self, input_feats, latent_dim, njoints, nfeats, hidden_dim=512):  # add hidden_dim as parameter
         super().__init__()
         self.input_feats = input_feats
         self.latent_dim = latent_dim
         self.njoints = njoints
         self.nfeats = nfeats
-        self.hidden_dim = hidden_dim # store hidden dimension
+        self.hidden_dim = hidden_dim  # store hidden dimension
 
         # MLP layers
-        self.mlp = nn.Sequential(
-            nn.Linear(self.latent_dim, self.hidden_dim),
-            nn.SiLU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
-            nn.SiLU(),
-            nn.Linear(self.hidden_dim // 2, self.input_feats)
-        )
+        self.mlp = nn.Sequential(nn.Linear(self.latent_dim, self.hidden_dim), nn.SiLU(),
+                                 nn.Linear(self.hidden_dim, self.hidden_dim // 2), nn.SiLU(),
+                                 nn.Linear(self.hidden_dim // 2, self.input_feats))
 
     def forward(self, output):
         nframes, bs, d = output.shape
@@ -39,25 +36,11 @@ class SignLanguagePoseDiffusion(nn.Module):
     Sign Language Pose Diffusion model.
     """
 
-    def __init__(
-        self,
-        input_feats: int,
-        chunk_len: int,
-        keypoints: int,
-        dims: int,
-        latent_dim: int = 256,
-        ff_size: int = 1024,
-        num_layers: int = 8,
-        num_heads: int = 4,
-        dropout: float = 0.2,
-        ablation: Optional[str] = None,
-        activation: str = "gelu",
-        legacy: bool = False,
-        arch: str = "trans_enc",
-        cond_mask_prob: float = 0,
-        device: Optional[torch.device] = None,
-        batch_first: bool = True
-    ):
+    def __init__(self, input_feats: int, chunk_len: int, keypoints: int, dims: int, latent_dim: int = 256,
+                 ff_size: int = 1024, num_layers: int = 8, num_heads: int = 4, dropout: float = 0.2,
+                 ablation: Optional[str] = None, activation: str = "gelu", legacy: bool = False,
+                 arch: str = "trans_enc", cond_mask_prob: float = 0, device: Optional[torch.device] = None,
+                 batch_first: bool = True):
         """
         Args:
             input_feats (int): Number of input features (keypoints * dimensions).
@@ -105,23 +88,19 @@ class SignLanguagePoseDiffusion(nn.Module):
         # Define sequence encoder based on chosen architecture
         if self.arch == "trans_enc":
             print(f"Initializing Transformer Encoder (batch_first={self.batch_first})")
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=latent_dim, nhead=num_heads, dim_feedforward=ff_size,
-                dropout=dropout, activation=activation, batch_first=self.batch_first
-            )
+            encoder_layer = nn.TransformerEncoderLayer(d_model=latent_dim, nhead=num_heads, dim_feedforward=ff_size,
+                                                       dropout=dropout, activation=activation,
+                                                       batch_first=self.batch_first)
             self.sequence_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         elif self.arch == "trans_dec":
             print(f"Initializing Transformer Decoder (batch_first={self.batch_first})")
-            decoder_layer = nn.TransformerDecoderLayer(
-                 d_model=latent_dim, nhead=num_heads, dim_feedforward=ff_size,
-                 dropout=dropout, activation=activation, batch_first=self.batch_first
-            )
+            decoder_layer = nn.TransformerDecoderLayer(d_model=latent_dim, nhead=num_heads, dim_feedforward=ff_size,
+                                                       dropout=dropout, activation=activation,
+                                                       batch_first=self.batch_first)
             self.sequence_encoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
         elif self.arch == "gru":
-             print("Initializing GRU Encoder (batch_first=True)")
-             self.sequence_encoder = nn.GRU(
-                 latent_dim, latent_dim, num_layers=num_layers, batch_first=True
-             )
+            print("Initializing GRU Encoder (batch_first=True)")
+            self.sequence_encoder = nn.GRU(latent_dim, latent_dim, num_layers=num_layers, batch_first=True)
         else:
             raise ValueError("Please choose correct architecture [trans_enc, trans_dec, gru]")
 
@@ -131,11 +110,11 @@ class SignLanguagePoseDiffusion(nn.Module):
         self.to(self.device)
 
     def forward(
-        self,
-        fluent_clip: torch.Tensor,        # (B, K, D, T_chunk)
-        disfluent_seq: torch.Tensor,      # (B, K, D, T_disfl)
-        t: torch.Tensor,                  # (B,)
-        previous_output: Optional[torch.Tensor] = None # (B, K, D, T_hist)
+            self,
+            fluent_clip: torch.Tensor,  # (B, K, D, T_chunk)
+            disfluent_seq: torch.Tensor,  # (B, K, D, T_disfl)
+            t: torch.Tensor,  # (B,)
+            previous_output: Optional[torch.Tensor] = None  # (B, K, D, T_hist)
     ) -> torch.Tensor:
 
         # # --- DEBUG: Print Initial Input Shapes ---
@@ -158,15 +137,15 @@ class SignLanguagePoseDiffusion(nn.Module):
         T_chunk = fluent_clip.shape[-1]
 
         # 1. Embed Timestep
-        _t_emb_raw = self.embed_timestep(t) # Expected (B, D)
+        _t_emb_raw = self.embed_timestep(t)  # Expected (B, D)
         # print(f"[DEBUG FWD 1a] Raw t_emb shape: {_t_emb_raw.shape}")
-        t_emb = _t_emb_raw.permute(1, 0, 2)
+        t_emb = _t_emb_raw.permute(1, 0, 2).contiguous()
         # print(f"[DEBUG FWD 1b] Final t_emb shape: {t_emb.shape}")
 
         # 2. Embed Disfluent Sequence (Condition)
-        _disfluent_emb_raw = self.disfluent_encoder(disfluent_seq) # Expected (T_disfl, B, D)
+        _disfluent_emb_raw = self.disfluent_encoder(disfluent_seq)  # Expected (T_disfl, B, D)
         # print(f"[DEBUG FWD 2a] Raw disfluent_emb shape: {_disfluent_emb_raw.shape}")
-        disfluent_emb = _disfluent_emb_raw.permute(1, 0, 2) # Expected (B, T_disfl, D)
+        disfluent_emb = _disfluent_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_disfl, D)
         # print(f"[DEBUG FWD 2b] Final disfluent_emb shape: {disfluent_emb.shape}")
 
         # 3. Embed Previous Output (History), if available
@@ -174,9 +153,9 @@ class SignLanguagePoseDiffusion(nn.Module):
         # print("[DEBUG FWD 3a] Processing previous_output...")
         if previous_output is not None and previous_output.shape[-1] > 0:
             # print(f"[DEBUG FWD 3b] History Input shape: {previous_output.shape}")
-            _prev_out_emb_raw = self.fluent_encoder(previous_output) # Expected (T_hist, B, D)
+            _prev_out_emb_raw = self.fluent_encoder(previous_output)  # Expected (T_hist, B, D)
             # print(f"[DEBUG FWD 3c] Raw prev_out_emb shape: {_prev_out_emb_raw.shape}")
-            prev_out_emb = _prev_out_emb_raw.permute(1, 0, 2) # Expected (B, T_hist, D)
+            prev_out_emb = _prev_out_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_hist, D)
             # print(f"[DEBUG FWD 3d] Final prev_out_emb shape: {prev_out_emb.shape}")
             embeddings_to_concat.append(prev_out_emb)
         else:
@@ -184,9 +163,9 @@ class SignLanguagePoseDiffusion(nn.Module):
             pass
 
         # 4. Embed Current Fluent Clip (Noisy Target 'x')
-        _fluent_emb_raw = self.fluent_encoder(fluent_clip) # Expected (T_chunk, B, D)
+        _fluent_emb_raw = self.fluent_encoder(fluent_clip)  # Expected (T_chunk, B, D)
         # print(f"[DEBUG FWD 4a] Raw fluent_emb shape: {_fluent_emb_raw.shape}")
-        fluent_emb = _fluent_emb_raw.permute(1, 0, 2) # Expected (B, T_chunk, D)
+        fluent_emb = _fluent_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_chunk, D)
         # print(f"[DEBUG FWD 4b] Final fluent_emb shape: {fluent_emb.shape}")
         embeddings_to_concat.append(fluent_emb)
 
@@ -198,33 +177,33 @@ class SignLanguagePoseDiffusion(nn.Module):
         # print(f"[DEBUG FWD 6a] xseq shape before PositionalEncoding: {xseq.shape}")
         # Adapt based on PositionalEncoding expectation (T, B, D) vs batch_first
         if self.batch_first:
-            xseq_permuted = xseq.permute(1, 0, 2) # (T_total, B, D)
+            xseq_permuted = xseq.permute(1, 0, 2).contiguous()  # (T_total, B, D)
             # print(f"[DEBUG FWD 6b] xseq permuted for PosEnc: {xseq_permuted.shape}")
             xseq_encoded = self.sequence_pos_encoder(xseq_permuted)
             # print(f"[DEBUG FWD 6c] xseq after PosEnc: {xseq_encoded.shape}")
-            xseq = xseq_encoded.permute(1, 0, 2) # Back to (B, T_total, D)
+            xseq = xseq_encoded.permute(1, 0, 2)  # Back to (B, T_total, D)
             # print(f"[DEBUG FWD 6d] xseq permuted back: {xseq.shape}")
         else:
-             # If not batch_first, assume xseq should be (T, B, D) already
-             # Need to adjust concatenation and permutations above if batch_first=False
-             xseq = xseq.permute(1, 0, 2) # Assume needs (T, B, D)
+            # If not batch_first, assume xseq should be (T, B, D) already
+            # Need to adjust concatenation and permutations above if batch_first=False
+            xseq = xseq.permute(1, 0, 2)  # Assume needs (T, B, D)
             #  print(f"[DEBUG FWD 6b] xseq permuted for PosEnc (batch_first=False): {xseq.shape}")
-             xseq = self.sequence_pos_encoder(xseq)
-            #  print(f"[DEBUG FWD 6c] xseq after PosEnc (batch_first=False): {xseq.shape}")
-             # Keep as (T, B, D) if encoder needs it
+            xseq = self.sequence_pos_encoder(xseq)
+        #  print(f"[DEBUG FWD 6c] xseq after PosEnc (batch_first=False): {xseq.shape}")
+        # Keep as (T, B, D) if encoder needs it
 
         # 7. Process through sequence encoder
         # print(f"[DEBUG FWD 7a] Input to sequence_encoder ({self.arch}) shape: {xseq.shape}")
         if self.arch == "trans_enc":
-             x_encoded = self.sequence_encoder(xseq)
+            x_encoded = self.sequence_encoder(xseq)
         elif self.arch == "gru":
-             x_encoded, _ = self.sequence_encoder(xseq)
+            x_encoded, _ = self.sequence_encoder(xseq)
         elif self.arch == "trans_dec":
-             memory = xseq
-             tgt = xseq
-             x_encoded = self.sequence_encoder(tgt=tgt, memory=memory)
+            memory = xseq
+            tgt = xseq
+            x_encoded = self.sequence_encoder(tgt=tgt, memory=memory)
         else:
-             raise ValueError("Unsupported architecture")
+            raise ValueError("Unsupported architecture")
         # print(f"[DEBUG FWD 7b] Output from sequence_encoder shape: {x_encoded.shape}")
 
         # 8. Extract the output corresponding to the target fluent_clip
@@ -250,10 +229,10 @@ class SignLanguagePoseDiffusion(nn.Module):
         return output
 
     def interface(
-        self,
-        fluent_clip: torch.Tensor, # (B, K, D, T_chunk)
-        t: torch.Tensor,           # (B,)
-        y: dict[str, torch.Tensor] # Conditions dict
+            self,
+            fluent_clip: torch.Tensor,  # (B, K, D, T_chunk)
+            t: torch.Tensor,  # (B,)
+            y: dict[str, torch.Tensor]  # Conditions dict
     ) -> torch.Tensor:
         """
         Interface for Classifier-Free Guidance (CFG). Handles previous_output.
@@ -264,13 +243,8 @@ class SignLanguagePoseDiffusion(nn.Module):
         previous_output = y.get("previous_output", None)
 
         # Apply CFG: randomly drop the condition with probability cond_mask_prob
-        keep_batch_idx = torch.rand(batch_size, device=disfluent_seq.device) < (1-self.cond_mask_prob)
+        keep_batch_idx = torch.rand(batch_size, device=disfluent_seq.device) < (1 - self.cond_mask_prob)
         disfluent_seq = disfluent_seq * keep_batch_idx.view((batch_size, 1, 1, 1))
 
         # Call the forward function
-        return self.forward(
-            fluent_clip=fluent_clip,
-            disfluent_seq=disfluent_seq,
-            t=t,
-            previous_output=previous_output
-        )
+        return self.forward(fluent_clip=fluent_clip, disfluent_seq=disfluent_seq, t=t, previous_output=previous_output)
