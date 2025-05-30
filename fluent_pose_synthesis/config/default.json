@@ -26,11 +26,12 @@
         "cond_mask_prob": 0,
         "use_loss_mse": true,
         "use_loss_vel": true,
-        "workers": 8,
+        "workers": 4,
         "load_num": -1,
         "validation_max_len": 160,
         "validation_chunk_size": 40,
         "validation_stop_threshold": 1e-4,
-        "eval_freq": 10
+        "eval_freq": 1,
+        "use_amp": false
     }
 }

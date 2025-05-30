@@ -7,9 +7,9 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torch.utils.data import Subset
+from torch.utils.data import Subset, DataLoader
 from tqdm import tqdm
-from torch.amp import autocast, GradScaler
+from torch.amp import GradScaler, autocast
 import torch.nn as nn
 
 from pose_format import Pose
@@ -188,13 +188,16 @@ class PoseTrainingPortal(BaseTrainingPortal):
             assert (model_output.shape == target.shape ==
                     x_start.shape), "Shape mismatch between model output, target, and x_start"
 
-            # Process the target_mask
-            mask_from_loader = processed_cond["target_mask"]
-            # print(f"[DEBUG diffuse] Received target_mask shape: {mask_from_loader.shape}")
-
-            # Adapt mask shape based on loader output (assuming B, T, K, D)
-            mask = mask_from_loader.permute(0, 2, 3, 1)  # -> (B, K, D, T_chunk)
-            # print(f"[DEBUG diffuse] Final mask shape for loss: {mask.shape}")
+            # Retrieve the optional target_mask which flags padded or invalid frames (True=masked)
+            mask_from_loader = processed_cond.get("target_mask", None)
+            if mask_from_loader is not None:
+                # Permute mask shape from (B, T_chunk, K, D) to (B, K, D, T_chunk)
+                mask = mask_from_loader.permute(0, 2, 3, 1)
+            else:
+                # No target_mask provided during validation: create a mask of all zeros
+                # torch.zeros_like produces a tensor of zeros matching x_start’s shape
+                # Zeros correspond to False in boolean mask, meaning no positions are masked
+                mask = torch.zeros_like(x_start)
 
             # Calculate loss only for samples that have at least one valid frame/point
             # Sum mask over K, D, T dimensions. Check if sum > 0 for each batch item.
@@ -257,7 +260,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             return None
 
         self.model.eval()
-        with torch.no_grad(), autocast("cuda"):
+        with torch.no_grad():
             references, predictions = [], []
             for batch_idx, batch_data in enumerate(self.validation_dataloader):
                 batch_refs, batch_preds = self._process_validation_batch(batch_data, batch_idx)
@@ -381,8 +384,12 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
     # Override the run_loop method to include validation
     def run_loop(self, enable_profiler=False, profiler_directory="./logs/tb_profiler"):
+        use_amp = getattr(self.config.trainer, "use_amp", False)
         # Initialize gradient scaler for mixed precision
-        scaler = GradScaler("cuda")
+        if use_amp:
+            scaler = GradScaler("cuda")
+        else:
+            scaler = None
         if enable_profiler:
             profiler = torch.profiler.profile(
                 activities=[
@@ -399,6 +406,13 @@ class PoseTrainingPortal(BaseTrainingPortal):
         sampling_idx = np.random.randint(0, len(self.dataloader.dataset), sampling_num)
         sampling_subset = DataLoader(Subset(self.dataloader.dataset, sampling_idx), batch_size=sampling_num)
         self.evaluate_sampling(sampling_subset, save_folder_name="init_samples")
+        # Sample fixed validation indices for saving predictions across epochs
+        num_to_save = getattr(self.config.trainer, "validation_save_num", 30)
+        val_dataset = self.validation_dataloader.dataset
+        if len(val_dataset) > num_to_save:
+            self.validation_sample_indices = np.random.choice(len(val_dataset), num_to_save, replace=False).tolist()
+        else:
+            self.validation_sample_indices = list(range(len(val_dataset)))
 
         epoch_process_bar = tqdm(range(self.epoch, self.num_epochs), desc=f"Epoch {self.epoch}")
         for epoch_idx in epoch_process_bar:
@@ -420,15 +434,18 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 self.opt.zero_grad()
                 t, weights = self.schedule_sampler.sample(x_start.shape[0], self.device)
 
-                # Mixed precision forward + loss
-                with autocast("cuda"):
+                if use_amp:
+                    with autocast("cuda"):
+                        _, losses = self.diffuse(x_start, t, cond, noise=None, return_loss=True)
+                        total_loss = (losses["loss"] * weights).mean()
+                    scaler.scale(total_loss).backward()
+                    scaler.step(self.opt)
+                    scaler.update()
+                else:
                     _, losses = self.diffuse(x_start, t, cond, noise=None, return_loss=True)
                     total_loss = (losses["loss"] * weights).mean()
-
-                # Scale loss, backward, and optimizer step
-                scaler.scale(total_loss).backward()
-                scaler.step(self.opt)
-                scaler.update()
+                    total_loss.backward()
+                    self.opt.step()
 
                 if profiler:
                     profiler.step()
@@ -462,15 +479,18 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     self.opt.zero_grad()
                     t, weights = self.schedule_sampler.sample(prior_x_start.shape[0], self.device)
 
-                    # Mixed precision forward + loss
-                    with autocast("cuda"):
+                    if use_amp:
+                        with autocast("cuda"):
+                            _, prior_losses = self.diffuse(prior_x_start, t, prior_cond, noise=None, return_loss=True)
+                            total_loss = (prior_losses["loss"] * weights).mean()
+                        scaler.scale(total_loss).backward()
+                        scaler.step(self.opt)
+                        scaler.update()
+                    else:
                         _, prior_losses = self.diffuse(prior_x_start, t, prior_cond, noise=None, return_loss=True)
                         total_loss = (prior_losses["loss"] * weights).mean()
-
-                    # Scale loss, backward, and optimizer step
-                    scaler.scale(total_loss).backward()
-                    scaler.step(self.opt)
-                    scaler.update()
+                        total_loss.backward()
+                        self.opt.step()
 
                     for key_name in prior_losses.keys():
                         if "loss" in key_name:
@@ -508,7 +528,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             self.scheduler.step()
 
             # Validation Phase
-            eval_freq = getattr(self.config.trainer, "eval_freq", 10)
+            eval_freq = getattr(self.config.trainer, "eval_freq", 1)
             if self.validation_dataloader is not None and (self.epoch % eval_freq == 0
                                                            or self.epoch == self.config.trainer.epoch - 1):
                 current_validation_metric = self._run_validation_epoch()
@@ -522,6 +542,53 @@ class PoseTrainingPortal(BaseTrainingPortal):
                         f"*** New best validation metric: {self.best_validation_metric:.4f} at epoch {self.epoch}. Saving best model. ***"
                     )
                     self.save_checkpoint(filename="best_model_validation")
+
+                # Compute validation loss on chunks
+                val_losses = []
+                for val_batch in self.validation_dataloader:
+                    # Prepare batch as in training
+                    val_batch = {
+                        key: val.to(self.device) if torch.is_tensor(val) else val
+                        for key, val in val_batch.items()
+                    }
+                    cond = {
+                        key: val.to(self.device) if torch.is_tensor(val) else val
+                        for key, val in val_batch["conditions"].items()
+                    }
+                    x_start = val_batch["data"]
+                    # Sample timesteps and weights
+                    t, weights = self.schedule_sampler.sample(x_start.shape[0], self.device)
+                    with torch.no_grad():
+                        _, losses = self.diffuse(x_start, t, cond, noise=None, return_loss=True)
+                    # Average per-sample loss for this batch
+                    batch_loss = (losses["loss"] * weights).mean().item()
+                    val_losses.append(batch_loss)
+                if self.tb_writer and val_losses:
+                    avg_val_loss = np.mean(val_losses)
+                    self.tb_writer.add_scalar("validation/loss", avg_val_loss, self.epoch)
+                    # --- Save the fixed 30 (or as defined in validation_save_num) validation predictions and corresponding GT results ---
+                    save_dir = Path(self.config.save) / "validation_samples" / f"epoch_{self.epoch}"
+                    mkdir(save_dir)
+                    sample_indices = self.validation_sample_indices
+                    val_save_loader = DataLoader(
+                        Subset(val_dataset, sample_indices),
+                        batch_size=len(sample_indices),
+                        shuffle=False,
+                        num_workers=self.config.trainer.workers,
+                        pin_memory=True,
+                        collate_fn=zero_pad_collator,
+                    )
+                    for batch_idx, batch_data in enumerate(val_save_loader):
+                        refs, preds = self._process_validation_batch(batch_data, batch_idx)
+                        for i, (ref, pred) in enumerate(zip(refs, preds)):
+                            idx = sample_indices[batch_idx * len(preds) + i]
+                            ref_path = save_dir / f"ref_epoch{self.epoch}_idx{idx}.pose"
+                            with open(ref_path, "wb") as f:
+                                ref.write(f)
+                            pred_path = save_dir / f"pred_epoch{self.epoch}_idx{idx}.pose"
+                            with open(pred_path, "wb") as f:
+                                pred.write(f)
+                    self.logger.info(f"Saved {len(sample_indices)} validation GT and predictions to {save_dir}")
 
         best_path = "%s/best.pt" % (self.config.save)
         self.load_checkpoint(best_path)
