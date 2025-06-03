@@ -251,6 +251,14 @@ class SignLanguagePoseDataset(Dataset):
         Args:
             idx (int): Index of the sample to retrieve.
         """
+        # Load metadata JSON for the current example to access original lengths
+        motion_idx = self.train_indices[idx][0]
+        metadata_path = self.examples[motion_idx]["metadata_path"]
+        with open(metadata_path, "r", encoding="utf-8") as mf:
+            meta_json = json.load(mf)
+        orig_fluent_len = meta_json.get("fluent_pose_length", None)
+        orig_disfluent_len = meta_json.get("disfluent_pose_length", None)
+
         if self.split == "validation":
             motion_idx = self.train_indices[idx][0]
             full_seq = torch.from_numpy(self.fluent_clip_list[motion_idx].astype(np.float32))
@@ -265,6 +273,10 @@ class SignLanguagePoseDataset(Dataset):
             # Its shape should be (history_len, K, D)
             previous_output = torch.zeros((history_len, num_keypoints, num_dims), dtype=full_seq.dtype)
 
+            metadata = {
+                "original_example_index": int(motion_idx), "fluent_pose_length": orig_fluent_len,
+                "disfluent_pose_length": orig_disfluent_len
+            }
             result = {
                 "data": full_seq,  # Full sequence, mainly used as reference for validation metrics
                 "conditions": {
@@ -272,7 +284,7 @@ class SignLanguagePoseDataset(Dataset):
                     "previous_output": previous_output,  # Now the initial history is all zeros
                 },
                 "full_fluent_reference": full_seq,  # Full reference for DTW evaluation
-                "metadata": {"original_example_index": int(motion_idx)},
+                "metadata": metadata,
             }
             return result
 
@@ -321,6 +333,8 @@ class SignLanguagePoseDataset(Dataset):
         metadata = {
             "original_example_index": int(motion_idx),  # Ensure it is Python int type
             "original_disfluent_filepath": str(self.examples[motion_idx]["disfluent_path"]),
+            "fluent_pose_length": orig_fluent_len,
+            "disfluent_pose_length": orig_disfluent_len
         }
 
         # Build base return dictionary

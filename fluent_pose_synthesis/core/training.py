@@ -39,6 +39,15 @@ class _ConditionalWrapper(nn.Module):
         return self.base_model.interface(x, t, self.cond)
 
 
+def move_to_device(val, device):
+    if torch.is_tensor(val):
+        return val.to(device)
+    elif isinstance(val, dict):
+        return {k: move_to_device(v, device) for k, v in val.items()}
+    else:
+        return val
+
+
 def masked_l2_per_sample(x: Tensor, y: Tensor, mask: Optional[Tensor] = None, reduce: bool = True) -> Tensor:
     """
     Compute masked L2 loss per sample. Correctly handles division by zero for fully masked samples.
@@ -159,7 +168,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
         # 3. Prepare conditions for the model
         processed_cond = {}
         for key, val in cond.items():
-            processed_cond[key] = val.to(self.device)
+            processed_cond[key] = move_to_device(val, self.device)
 
         # Permute sequence conditions to (B, K, D, T) expected by MotionProcess encoders
         processed_cond["input_sequence"] = processed_cond["input_sequence"].permute(0, 2, 3, 1)  # (B, K, D, T_disfl)
@@ -194,13 +203,18 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 # Permute mask shape from (B, T_chunk, K, D) to (B, K, D, T_chunk)
                 mask = mask_from_loader.permute(0, 2, 3, 1)
             else:
-                # No target_mask provided during validation: create a mask of all zeros
-                # torch.zeros_like produces a tensor of zeros matching x_start’s shape
-                # Zeros correspond to False in boolean mask, meaning no positions are masked
-                mask = torch.zeros_like(x_start)
+                # Create mask based on original fluent lengths
+                original_lengths = cond.get("metadata", {}).get("fluent_pose_length", None)
+                if original_lengths is not None:
+                    original_lengths = original_lengths.to(x_start.device)  # Shape: (B,)
+                    B, K, D, T_padded = x_start.shape
+                    time_idx = torch.arange(T_padded, device=x_start.device).unsqueeze(0).expand(B, -1)  # (B, T_padded)
+                    mask_for_time = time_idx >= original_lengths.unsqueeze(1)  # (B, T_padded)
+                    mask = mask_for_time.unsqueeze(1).unsqueeze(1).expand(B, K, D, T_padded)
+                else:
+                    mask = torch.zeros_like(x_start)
+                    print("[WARNING] No target_mask provided. Using zero mask (no frames masked).")
 
-            # Calculate loss only for samples that have at least one valid frame/point
-            # Sum mask over K, D, T dimensions. Check if sum > 0 for each batch item.
             batch_has_valid = (mask.float().sum(dim=(1, 2, 3))
                                < mask.shape[1] * mask.shape[2] * mask.shape[3])  # Check if not all masked
             valid_batch_indices = batch_has_valid.nonzero().squeeze()
@@ -348,11 +362,20 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # 3. Build Pose lists
             refs, preds = [], []
             for i in range(gt_unnorm.shape[0]):
+                # Retrieve original reference length to truncate padded frames
+                original_lengths = batch_data["metadata"]["fluent_pose_length"]
+                current_original_length = int(original_lengths[i])
                 fps = getattr(self.val_pose_header, "fps", 25.0)
-                ref_np = gt_unnorm[i].cpu().numpy().reshape(gt_unnorm.shape[1], 1, K, D_feat).astype(np.float64)
-                ref_body = NumPyPoseBody(fps=fps, data=ref_np, confidence=np.ones((gt_unnorm.shape[1], 1, K)))
-                pred_np = pred_unnorm[i].cpu().numpy().reshape(pred_unnorm.shape[1], 1, K, D_feat).astype(np.float64)
-                preds_body = NumPyPoseBody(fps=fps, data=pred_np, confidence=np.ones((pred_unnorm.shape[1], 1, K)))
+                # Truncate to original length before reshaping
+                ref_truncated_data = gt_unnorm[i, :current_original_length, :, :]
+                ref_np = ref_truncated_data.cpu().numpy().reshape(current_original_length, 1, K,
+                                                                  D_feat).astype(np.float64)
+                ref_body = NumPyPoseBody(fps=fps, data=ref_np, confidence=np.ones((current_original_length, 1, K)))
+                # Use full prediction length without truncation
+                pred_length = pred_unnorm.shape[1]
+                pred_full = pred_unnorm[i, :pred_length, :, :]  # shape (pred_length, K, D_feat)
+                pred_np = pred_full.cpu().numpy().reshape(pred_length, 1, K, D_feat).astype(np.float64)
+                preds_body = NumPyPoseBody(fps=fps, data=pred_np, confidence=np.ones((pred_length, 1, K)))
                 refs.append(Pose(self.val_pose_header, ref_body))
                 preds.append(Pose(self.val_pose_header, preds_body))
             return refs, preds
@@ -546,21 +569,30 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 # Compute validation loss on chunks
                 val_losses = []
                 for val_batch in self.validation_dataloader:
-                    # Prepare batch as in training
-                    val_batch = {
-                        key: val.to(self.device) if torch.is_tensor(val) else val
-                        for key, val in val_batch.items()
-                    }
-                    cond = {
-                        key: val.to(self.device) if torch.is_tensor(val) else val
-                        for key, val in val_batch["conditions"].items()
-                    }
-                    x_start = val_batch["data"]
-                    # Sample timesteps and weights
+                    # Recursively move to device and handle dicts
+                    val_batch_device = {}
+                    for key, v_item in val_batch.items():
+                        if torch.is_tensor(v_item):
+                            val_batch_device[key] = v_item.to(self.device)
+                        elif isinstance(v_item, dict):
+                            val_batch_device[key] = {
+                                sk: sv.to(self.device) if torch.is_tensor(sv) else sv
+                                for sk, sv in v_item.items()
+                            }
+                        else:
+                            val_batch_device[key] = v_item
+
+                    current_cond_for_diffuse = {k: v for k, v in val_batch_device.get("conditions", {}).items()}
+                    if "metadata" in val_batch_device and "fluent_pose_length" in val_batch_device["metadata"]:
+                        if "metadata" not in current_cond_for_diffuse:
+                            current_cond_for_diffuse["metadata"] = {}
+                        current_cond_for_diffuse["metadata"]["fluent_pose_length"] = val_batch_device["metadata"][
+                            "fluent_pose_length"]
+
+                    x_start = val_batch_device["data"]
                     t, weights = self.schedule_sampler.sample(x_start.shape[0], self.device)
                     with torch.no_grad():
-                        _, losses = self.diffuse(x_start, t, cond, noise=None, return_loss=True)
-                    # Average per-sample loss for this batch
+                        _, losses = self.diffuse(x_start, t, current_cond_for_diffuse, noise=None, return_loss=True)
                     batch_loss = (losses["loss"] * weights).mean().item()
                     val_losses.append(batch_loss)
                 if self.tb_writer and val_losses:

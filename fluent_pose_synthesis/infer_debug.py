@@ -1,9 +1,9 @@
 # Example usage:
 # python -m fluent_pose_synthesis.infer_debug \
 # -i assets/sample_dataset \
-# -c save/debug_run/3rd_train_whole_dataset_output/config.json \
-# -r save/debug_run/3rd_train_whole_dataset_output/best.pt \
-# -o save/debug_run/3rd_train_whole_dataset_output/training_infer_output_steps \
+# -c save/debug_run/4th_train_whole_dataset_output/config.json \
+# -r save/debug_run/4th_train_whole_dataset_output/best_model_validation.pt \
+# -o save/debug_run/4th_train_whole_dataset_output/validation_infer_output_steps \
 # --batch_size 64 \
 # --chunk_size 40 \
 # --max_len 40 \
