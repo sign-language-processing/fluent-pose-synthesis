@@ -238,25 +238,32 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 # loss_data = torch.nn.MSELoss()(model_output, target)
                 loss_terms["loss_data"] = loss_data
 
-            # if self.config.trainer.use_loss_vel:
-            #     # Calculate velocity on time axis (last dimension)
-            #     target_vel = target[..., 1:] - target[..., :-1]
-            #     model_output_vel = model_output[..., 1:] - model_output[..., :-1]
-            #     # Create mask for velocity (same shape as velocity)
-            #     mask_vel = mask[..., 1:] if mask is not None else None
-
-            #     loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
-            #     loss_terms["loss_data_vel"] = loss_data_vel
-
-            if hasattr(self.config.trainer, "lambda_vel"):
-                lambda_vel = self.config.trainer.lambda_vel
-
-            # Calulate Total Loss
-            total_loss = 0.0
-            if self.config.trainer.use_loss_mse:
-                total_loss += loss_terms.get("loss_data", 0.0)
+            # --- Velocity Loss ---
+            lambda_vel = getattr(self.config.trainer, "lambda_vel", 1.0)
             if self.config.trainer.use_loss_vel:
-                total_loss += lambda_vel * loss_terms.get("loss_data_vel", 0.0)
+                # Compute first-order difference (velocity)
+                target_vel = target[..., 1:] - target[..., :-1]
+                model_output_vel = model_output[..., 1:] - model_output[..., :-1]
+                mask_vel = mask[..., 1:] if mask is not None else None
+                loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
+                loss_terms["loss_data_vel"] = loss_data_vel
+
+                # --- Optional: Acceleration Loss ---
+                if getattr(self.config.trainer, "use_loss_accel", False):
+                    lambda_accel = getattr(self.config.trainer, "lambda_accel", 1.0)
+                    # Compute second-order difference (acceleration)
+                    target_accel = target_vel[..., 1:] - target_vel[..., :-1]
+                    model_output_accel = model_output_vel[..., 1:] - model_output_vel[..., :-1]
+                    mask_accel = mask_vel[..., 1:] if mask_vel is not None else None
+                    loss_data_accel = masked_l2_per_sample(target_accel, model_output_accel, mask_accel, reduce=True)
+                    loss_terms["loss_data_accel"] = loss_data_accel
+
+            # --- Compute Weighted Total Loss ---
+            total_loss = loss_terms.get("loss_data", 0.0)
+            if "loss_data_vel" in loss_terms:
+                total_loss += lambda_vel * loss_terms["loss_data_vel"]
+            if "loss_data_accel" in loss_terms:
+                total_loss += lambda_accel * loss_terms["loss_data_accel"]
             loss_terms["loss"] = total_loss
 
             return model_output_original_shape, loss_terms
@@ -327,12 +334,27 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     break
                 n_frames = min(chunk_size, max_len - generated.shape[3])
                 target_shape = (current_history.shape[0], K, D_feat, n_frames)
-                # --- Use _ConditionalWrapper and pass model_kwargs['y'] ---
+                # --- Use classifier-free guidance ---
                 cond_dict = {"input_sequence": disfluent_cond_seq, "previous_output": current_history}
-                wrapped_model = _ConditionalWrapper(self.model, cond_dict)
-                chunk = self.diffusion.p_sample_loop(model=wrapped_model, shape=target_shape,
-                                                     clip_denoised=getattr(self.config.diff, "clip_denoised", False),
-                                                     model_kwargs={"y": cond_dict}, progress=False)
+                guidance_scale = getattr(self.config.trainer, "guidance_scale", 2.0)
+                # Unconditional input: zero out the disfluent sequence
+                uncond_disfluent_seq = torch.zeros_like(disfluent_cond_seq)
+                uncond_dict = {"input_sequence": uncond_disfluent_seq, "previous_output": current_history}
+
+                # Conditional sampling
+                wrapped_model_cond = _ConditionalWrapper(self.model, cond_dict)
+                cond_chunk = self.diffusion.p_sample_loop(
+                    model=wrapped_model_cond, shape=target_shape,
+                    clip_denoised=getattr(self.config.diff, "clip_denoised",
+                                          False), model_kwargs={"y": cond_dict}, progress=False)
+                # Unconditional sampling
+                wrapped_model_uncond = _ConditionalWrapper(self.model, uncond_dict)
+                uncond_chunk = self.diffusion.p_sample_loop(
+                    model=wrapped_model_uncond, shape=target_shape,
+                    clip_denoised=getattr(self.config.diff, "clip_denoised",
+                                          False), model_kwargs={"y": uncond_dict}, progress=False)
+                # Combine with guidance scale
+                chunk = uncond_chunk + guidance_scale * (cond_chunk - uncond_chunk)
                 # Stop condition
                 if chunk.numel() > 0:
                     mean_abs = chunk.abs().mean(dim=(1, 2, 3))

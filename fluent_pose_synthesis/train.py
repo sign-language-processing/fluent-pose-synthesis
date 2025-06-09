@@ -131,6 +131,7 @@ def train(
     if resume_path is not None:
         try:
             trainer.load_checkpoint(str(resume_path))
+            logger.info(f"[DEBUG] After load_checkpoint, trainer.epoch={trainer.epoch}")
         except FileNotFoundError:
             print(f"No checkpoint found at {resume_path}")
             sys.exit(1)
@@ -140,6 +141,7 @@ def train(
 
     logger.info(f"Profiler output will be directed to: {custom_profiler_directory}")
 
+    logger.info(f"[DEBUG] About to start run_loop with trainer.epoch={trainer.epoch}")
     trainer.run_loop(enable_profiler=True, profiler_directory=str(custom_profiler_directory))
     # trainer.run_loop()
 
@@ -202,9 +204,9 @@ def main():
             sys.exit(0)
         shutil.rmtree(config.save, ignore_errors=True)
 
-    # Auto-resume for cluster
-    resume_path = None
-    if config.save.exists() and args.resume is None:
+    # Use the resume path from command line argument if provided
+    resume_path = Path(args.resume) if args.resume else None
+    if resume_path is None and config.save.exists():
         best_ckpt = config.save / "best.pt"
         if best_ckpt.exists():
             resume_path = best_ckpt

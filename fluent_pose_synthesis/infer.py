@@ -1,14 +1,15 @@
 # Example usage:
-# python -m fluent_pose_synthesis.infer_debug \
+# python -m fluent_pose_synthesis.infer \
 # -i assets/sample_dataset \
-# -c save/debug_run/4th_train_whole_dataset_output/config.json \
-# -r save/debug_run/4th_train_whole_dataset_output/best_model_validation.pt \
-# -o save/debug_run/4th_train_whole_dataset_output/validation_infer_output_steps \
-# --batch_size 64 \
+# -c save/debug_run/4th_train_whole_dataset_continued_output/4th_train_whole_dataset_continued_output/config.json \
+# -r save/debug_run/4th_train_whole_dataset_continued_output/4th_train_whole_dataset_continued_output/best_model_validation.pt \
+# -o save/debug_run/4th_train_whole_dataset_continued_output/4th_train_whole_dataset_continued_output/infer_results_validation_progressive \
+# --batch_size 1 \
 # --chunk_size 40 \
-# --max_len 40 \
+# --max_len 160 \
 # --stop_threshold 1e-4 \
-# --seed 1234
+# --seed 1234 \
+# --progressive
 
 import argparse
 import json
@@ -21,16 +22,20 @@ import numpy as np
 from numpy.core.multiarray import scalar
 from numpy import dtype
 import torch.serialization
+import logging
+from tqdm import tqdm
 
 # CAMDM and project imports
 from CAMDM.diffusion.create_diffusion import create_gaussian_diffusion
 from CAMDM.utils.common import fixseed
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.data.load_data import SignLanguagePoseDataset
+from fluent_pose_synthesis.core.training import _ConditionalWrapper
 from pose_format import Pose
 from pose_format.numpy.pose_body import NumPyPoseBody
-from pose_anonymization.data.normalization import unnormalize_mean_std
-from pose_format.utils.generic import normalize_pose_size
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 torch.serialization.add_safe_globals([
     SimpleNamespace,
@@ -97,11 +102,13 @@ def main():
     parser.add_argument("--stop_threshold", default=1e-5, type=float,
                         help="Threshold for mean absolute value of generated chunk to detect stop condition.")
     parser.add_argument("--seed", default=42, type=int, help="Random seed.")
+    parser.add_argument("--progressive", action="store_true",
+                        help="Use progressive sampling (p_sample_loop_progressive) instead of p_sample_loop")
     args = parser.parse_args()
 
     fixseed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # Load Configuration
     try:
@@ -126,6 +133,7 @@ def main():
     config.inference = SimpleNamespace(chunk_size=args.chunk_size, max_len=args.max_len,
                                        stop_threshold=args.stop_threshold)
     config.device = device
+    config.inference.progressive = args.progressive
 
     print("Loading dataset...")
     dataset = SignLanguagePoseDataset(
@@ -146,25 +154,17 @@ def main():
     )
     print(f"Dataset loaded with {len(dataset)} samples.")
 
-    print(
-        f"[DEBUG infer.py] Raw dataset.input_mean shape: {dataset.input_mean.shape if hasattr(dataset.input_mean, 'shape') else 'N/A'}"
-    )
-    print(
-        f"[DEBUG infer.py] Raw dataset.input_std shape: {dataset.input_std.shape if hasattr(dataset.input_std, 'shape') else 'N/A'}"
-    )
-    print(f"[DEBUG infer.py] Raw dataset.input_mean value (first few elements):\n{dataset.input_mean.ravel()[:5]}")
-
     data_input_mean_np = np.array(dataset.input_mean).squeeze()
     data_input_std_np = np.array(dataset.input_std).squeeze()
     data_cond_mean_np = np.array(dataset.condition_mean).squeeze()
     data_cond_std_np = np.array(dataset.condition_std).squeeze()
 
-    print(f"[DEBUG infer.py] Squeezed data_input_mean_np shape: {data_input_mean_np.shape}")
-    print(f"[DEBUG infer.py] Squeezed data_input_std_np shape: {data_input_std_np.shape}")
-    print(f"[DEBUG infer.py] Squeezed data_input_mean_np value (first few elements):\n{data_input_mean_np.ravel()[:5]}")
+    logger.debug(f"Squeezed data_input_mean_np shape: {data_input_mean_np.shape}")
+    logger.debug(f"Squeezed data_input_std_np shape: {data_input_std_np.shape}")
+    logger.debug(f"Squeezed data_input_mean_np value (first few elements):\n{data_input_mean_np.ravel()[:5]}")
 
     expected_stat_shape_suffix = (config.arch.keypoints, config.arch.dims)
-    print(f"[DEBUG infer.py] Expected stat shape suffix: {expected_stat_shape_suffix}")
+    logger.debug(f"Expected stat shape suffix: {expected_stat_shape_suffix}")
 
     assert data_input_mean_np.shape[-len(expected_stat_shape_suffix):] == expected_stat_shape_suffix, \
         f"Mean shape mismatch. Actual: {data_input_mean_np.shape}, Expected suffix: {expected_stat_shape_suffix}"
@@ -172,9 +172,9 @@ def main():
         f"Std shape mismatch. Actual: {data_input_std_np.shape}, Expected suffix: {expected_stat_shape_suffix}"
 
     pose_header = dataset.pose_header
-    print("[INFO] Pose header loaded from dataset.")
+    logger.info(f"Pose header loaded from dataset.")
 
-    print("Initializing model...")
+    logger.info(f"Initializing model...")
     input_feats = config.arch.keypoints * config.arch.dims
     model = SignLanguagePoseDiffusion(input_feats=input_feats, chunk_len=config.arch.chunk_len,
                                       keypoints=config.arch.keypoints, dims=config.arch.dims,
@@ -195,18 +195,6 @@ def main():
     print(f"Sqrt Alphas Cumprod: {diffusion.sqrt_alphas_cumprod}")
     print(f"Sqrt One Minus Alphas Cumprod: {diffusion.sqrt_one_minus_alphas_cumprod}")
 
-    class WrappedDiffusionModel(torch.nn.Module):
-
-        def __init__(self, model_to_wrap):
-            super().__init__()
-            self.model_to_wrap = model_to_wrap
-
-        def forward(self, x_noisy_chunk, t, **kwargs):
-            # The model's interface expects y=conditions_dict
-            return self.model_to_wrap.interface(x_noisy_chunk, t, y=kwargs["y"])
-
-    wrapped_model = WrappedDiffusionModel(model)
-
     save_dir = Path(args.output)
     save_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output will be saved to: {save_dir}")
@@ -222,8 +210,8 @@ def main():
     history_len_for_inference = getattr(config.arch, "history_len", 5)
     print(f"[INFO] Using history_len_for_inference: {history_len_for_inference}")
 
-    for batch_idx, batch_data in enumerate(dataloader):
-        print(f"\n--- Processing batch {batch_idx + 1}/{total_batches} ---")
+    for batch_idx, batch_data in enumerate(tqdm(dataloader, desc="Batches")):
+        logger.info(f"Processing batch {batch_idx + 1}/{total_batches}")
 
         disfluent_cond_seq_batch_loader = batch_data["conditions"]["input_sequence"].to(device)
         metadata_from_collate = batch_data.get("metadata")
@@ -288,62 +276,75 @@ def main():
             print(
                 f"  Step {step + 1}: Gen {n_frames_to_generate_this_step} frames. Total gen: {current_generated_len}.")
 
-            effective_previous_output = torch.empty(current_batch_size_for_generation, K, D, 0, device=device)
-            if current_generated_len > 0:
-                if current_generated_len < history_len_for_inference:
-                    start_index = max(0, current_generated_len - history_len_for_inference)
-                    effective_previous_output = generated_fluent_seq[:, :, :, start_index:]
-                else:
-                    effective_previous_output = generated_fluent_seq[:, :, :, -history_len_for_inference:]
+            # Construct fixed-length history tensor of size history_len_for_inference
+            if current_generated_len < history_len_for_inference:
+                # Left-pad with zeros if not enough frames generated
+                pad_frames = history_len_for_inference - current_generated_len
+                padding = torch.zeros(current_batch_size_for_generation, K, D, pad_frames, device=device)
+                effective_previous_output = torch.cat([padding, generated_fluent_seq], dim=3)
+            else:
+                # Slice the last history_len_for_inference frames
+                effective_previous_output = generated_fluent_seq[:, :, :, -history_len_for_inference:]
 
             print(f"    Effective previous_output shape for model: {effective_previous_output.shape}")
 
             model_kwargs_y = {
                 "input_sequence": disfluent_cond_seq_for_generation, "previous_output": effective_previous_output
             }
-            model_kwargs_for_sampler = {"y": model_kwargs_y}
+            # Use the same ConditionalWrapper as in training
+            wrapped_model = _ConditionalWrapper(model, model_kwargs_y)
 
-            # --- Progressive sampling and per-step saving ---
+            # --- Progressive or non-progressive sampling and per-step saving ---
             with torch.no_grad():
-                # Prepare to collect all pred_xstart for each step in the progressive sampling
-                all_steps_pred_xstart = []
-                for prog_step, sample in enumerate(
-                        diffusion.p_sample_loop_progressive(
-                            # diffusion.ddim_sample_loop_progressive(
-                            model=wrapped_model,
-                            shape=target_chunk_shape,
-                            clip_denoised=False,
-                            model_kwargs=model_kwargs_for_sampler,
-                            progress=False,
-                            # eta=0.0,
-                        )):
-                    pred_xstart = sample["pred_xstart"].cpu().numpy()  # shape (B_eff, K, D, chunk)
-                    for task_idx, (original_id, _, _) in enumerate(tasks_for_this_batch):
-                        if "/" in original_id or "\\" in original_id:
-                            filename_base_from_id = Path(original_id).stem
-                        else:
-                            filename_base_from_id = original_id
-                        np.save(save_dir / f"pose_pred_fluent_{filename_base_from_id}_step{prog_step}.npy",
-                                pred_xstart[task_idx])
-                        single_pred = pred_xstart[task_idx]  # (K, D, chunk)
-                        # transpose to (chunk, K, D)
-                        single_pred = np.transpose(single_pred, (2, 0, 1))  # (chunk, K, D)
-                        # reshape to (chunk, 1, K, D)
-                        single_pred = single_pred.reshape(single_pred.shape[0], 1, single_pred.shape[1],
-                                                          single_pred.shape[2])  # (chunk, 1, K, D)
-                        # unnormalize
-                        unnorm_pred = single_pred * data_input_std_np + data_input_mean_np
-                        # confidence
-                        confidence = np.ones((unnorm_pred.shape[0], 1, unnorm_pred.shape[2]), dtype=np.float32)
-                        fps_to_use = pose_header.fps if hasattr(pose_header, 'fps') and pose_header.fps > 0 else 25.0
-                        pose_body = NumPyPoseBody(fps=fps_to_use, data=unnorm_pred, confidence=confidence)
-                        pose_obj = Pose(pose_header, pose_body)
-                        with open(save_dir / f"pose_pred_fluent_{filename_base_from_id}_step{prog_step}.pose",
-                                  "wb") as f:
-                            pose_obj.write(f)
-                    all_steps_pred_xstart.append(pred_xstart)
-                # Use the last step as the generated chunk (convert to tensor, move to device)
-                generated_chunk = torch.tensor(all_steps_pred_xstart[-1], device=device)
+                if config.inference.progressive:
+                    # Prepare to collect all pred_xstart for each step in the progressive sampling
+                    all_steps_pred_xstart = []
+                    sampler = diffusion.p_sample_loop_progressive(
+                        model=wrapped_model,
+                        shape=target_chunk_shape,
+                        clip_denoised=False,
+                        model_kwargs={"y": model_kwargs_y},
+                        progress=False,
+                    )
+                    for prog_step, sample in enumerate(tqdm(sampler, desc=f"Prog steps batch {batch_idx+1}")):
+                        pred_xstart = sample["pred_xstart"].cpu().numpy()  # shape (B_eff, K, D, chunk)
+                        for task_idx, (original_id, _, _) in enumerate(tasks_for_this_batch):
+                            if "/" in original_id or "\\" in original_id:
+                                filename_base_from_id = Path(original_id).stem
+                            else:
+                                filename_base_from_id = original_id
+                            np.save(save_dir / f"pose_pred_fluent_{filename_base_from_id}_step{prog_step}.npy",
+                                    pred_xstart[task_idx])
+                            single_pred = pred_xstart[task_idx]  # (K, D, chunk)
+                            # transpose to (chunk, K, D)
+                            single_pred = np.transpose(single_pred, (2, 0, 1))  # (chunk, K, D)
+                            # reshape to (chunk, 1, K, D)
+                            single_pred = single_pred.reshape(single_pred.shape[0], 1, single_pred.shape[1],
+                                                              single_pred.shape[2])  # (chunk, 1, K, D)
+                            # unnormalize
+                            unnorm_pred = single_pred * data_input_std_np + data_input_mean_np
+                            # confidence
+                            confidence = np.ones((unnorm_pred.shape[0], 1, unnorm_pred.shape[2]), dtype=np.float32)
+                            fps_to_use = pose_header.fps if hasattr(pose_header,
+                                                                    'fps') and pose_header.fps > 0 else 25.0
+                            pose_body = NumPyPoseBody(fps=fps_to_use, data=unnorm_pred, confidence=confidence)
+                            pose_obj = Pose(pose_header, pose_body)
+                            with open(save_dir / f"pose_pred_fluent_{filename_base_from_id}_step{prog_step}.pose",
+                                      "wb") as f:
+                                pose_obj.write(f)
+                        all_steps_pred_xstart.append(pred_xstart)
+                    # Use the last step as the generated chunk (convert to tensor, move to device)
+                    generated_chunk = torch.tensor(all_steps_pred_xstart[-1], device=device)
+                else:
+                    logger.info(f"Using non-progressive sampling for batch {batch_idx+1}, step {step+1}")
+                    # p_sample_loop returns a tensor of shape (B, K, D, chunk)
+                    generated_chunk = diffusion.p_sample_loop(
+                        model=wrapped_model,
+                        shape=target_chunk_shape,
+                        clip_denoised=False,
+                        model_kwargs={"y": model_kwargs_y},
+                        progress=False,
+                    )
 
             mean_abs_for_chunk = torch.zeros(current_batch_size_for_generation, device=device)
             if generated_chunk.numel() > 0:
