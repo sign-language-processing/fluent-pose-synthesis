@@ -6,20 +6,28 @@ from typing import Any, Dict
 
 import torch
 import numpy as np
+from tqdm import tqdm
 from torch.utils.data import Dataset
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_anonymization.data.normalization import normalize_mean_std
+import pickle
+import hashlib
 
 
 class SignLanguagePoseDataset(Dataset):
+
     def __init__(
         self,
         data_dir: Path,
         split: str,
         chunk_len: int,
         dtype=np.float32,
+        history_len: int = 5,
         limited_num: int = -1,
+        use_cache: bool = True,
+        cache_dir: Path = None,
+        force_reload: bool = False,
     ):
         """
         Args:
@@ -32,7 +40,44 @@ class SignLanguagePoseDataset(Dataset):
         self.data_dir = data_dir
         self.split = split
         self.chunk_len = chunk_len
+        self.history_len = history_len
+        self.window_len = chunk_len + history_len
         self.dtype = dtype
+
+        # Cache controls
+        self.use_cache = use_cache
+        self.force_reload = force_reload
+        # Determine cache directory
+        if cache_dir is None:
+            self.cache_dir = self.data_dir / "cache"
+        else:
+            self.cache_dir = cache_dir
+        self.cache_dir.mkdir(exist_ok=True)
+        # Collect data file mtimes for invalidation
+        split_dir = self.data_dir / self.split
+        all_files = list(split_dir.glob(f"{split}_*_original.pose")) + \
+                    list(split_dir.glob(f"{split}_*_updated.pose")) + \
+                    list(split_dir.glob(f"{split}_*_metadata.json"))
+        mtimes = [f.stat().st_mtime for f in all_files if f.exists()]
+        data_mtime = max(mtimes) if mtimes else 0
+        # Build cache key
+        cache_params = {
+            'data_dir': str(data_dir),
+            'split': split,
+            'chunk_len': chunk_len,
+            'history_len': history_len,
+            'dtype': str(dtype),
+            'limited_num': limited_num,
+            'data_mtime': data_mtime,
+        }
+        cache_key = hashlib.md5(str(cache_params).encode()).hexdigest()
+        self.cache_file = self.cache_dir / f"dataset_cache_{split}_{cache_key}.pkl"
+        # Try loading from cache
+        if self.use_cache and not self.force_reload and self.cache_file.exists():
+            print(f"Loading dataset from cache: {self.cache_file}")
+            self._load_from_cache()
+            print(f"Dataset loaded from cache: {len(self.examples)} samples, split={split}")
+            return
 
         # Store only file paths for now, load data on-the-fly
         # Each sample should have fluent (original), disfluent (updated), and metadata files
@@ -42,19 +87,15 @@ class SignLanguagePoseDataset(Dataset):
         if limited_num > 0:
             fluent_files = fluent_files[:limited_num]  # Limit the number of samples to load
 
-        for fluent_file in fluent_files:
+        for fluent_file in tqdm(fluent_files, desc=f"Loading {split} examples"):
             # Construct corresponding disfluent and metadata file paths based on the file name
             disfluent_file = fluent_file.with_name(fluent_file.name.replace("_original.pose", "_updated.pose"))
             metadata_file = fluent_file.with_name(fluent_file.name.replace("_original.pose", "_metadata.json"))
-            self.examples.append(
-                {
-                    "fluent_path": fluent_file,
-                    "disfluent_path": disfluent_file,
-                    "metadata_path": metadata_file,
-                }
-            )
-
-        print(f"Dataset initialized with {len(self.examples)} samples. Split: {split}")
+            self.examples.append({
+                "fluent_path": fluent_file,
+                "disfluent_path": disfluent_file,
+                "metadata_path": metadata_file,
+            })
 
         # Initialize pose_header from the first fluent .pose file
         if self.examples:
@@ -69,11 +110,139 @@ class SignLanguagePoseDataset(Dataset):
         else:
             self.pose_header = None
 
+        self.fluent_clip_list = []
+        self.fluent_mask_list = []
+        self.disfluent_clip_list = []
+
+        self.train_indices = []
+
+        for example_idx, example in enumerate(
+                tqdm(self.examples, desc=f"Processing pose files for {split}", total=len(self.examples))):
+            with open(example["fluent_path"], "rb") as f:
+                fluent_pose = Pose.read(f.read())
+            with open(example["disfluent_path"], "rb") as f:
+                disfluent_pose = Pose.read(f.read())
+
+            fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
+            fluent_mask = fluent_pose.body.data.mask
+            disfluent_data = np.array(disfluent_pose.body.data.astype(self.dtype))
+            fluent_length = fluent_data.shape[0]
+
+            self.fluent_clip_list.append(fluent_data[:, 0])
+            self.fluent_mask_list.append(fluent_mask[:, 0])
+            self.disfluent_clip_list.append(disfluent_data[:, 0])
+
+        if self.split == "validation":
+            self.train_indices = np.arange(len(self.examples)).reshape(-1, 1)
+        else:
+            for example_idx, example in enumerate(
+                    tqdm(self.examples, desc=f"Building indices for {split}", total=len(self.examples))):
+                fluent_data = self.fluent_clip_list[example_idx]
+                fluent_length = fluent_data.shape[0]
+
+                if fluent_length >= self.chunk_len:
+                    zero_indices = np.array([-1] * self.history_len + list(range(self.chunk_len))).reshape(1, -1)
+                    clip_indices = np.arange(0, fluent_length - self.window_len + 1, 1)[:, None] + np.arange(
+                        self.window_len)
+                    clip_indices = np.concatenate((zero_indices, clip_indices), axis=0)
+                    clip_indices_with_idx = np.hstack((
+                        np.full(
+                            (len(clip_indices), 1),
+                            example_idx,
+                            dtype=clip_indices.dtype,
+                        ),
+                        clip_indices,
+                    ))
+                else:
+                    zero_indices = np.array([-1] * self.history_len + list(range(fluent_length)) + [-2] *
+                                            (self.chunk_len - fluent_length)).reshape(1, -1)
+                    clip_indices_list = []
+                    for i in range(self.window_len):
+                        is_history_part = i < self.history_len
+                        if i < fluent_length:
+                            clip_indices_list.append(i)
+                        else:
+                            if is_history_part:
+                                clip_indices_list.append(-1)
+                            else:
+                                clip_indices_list.append(-2)
+                    clip_indices = np.array(clip_indices_list).reshape(1, -1)
+                    clip_indices = np.concatenate((zero_indices, clip_indices), axis=0)
+                    clip_indices_with_idx = np.hstack((
+                        np.full(
+                            (len(clip_indices), 1),
+                            example_idx,
+                            dtype=clip_indices.dtype,
+                        ),
+                        clip_indices,
+                    ))
+
+                self.train_indices.append(clip_indices_with_idx)
+
+            self.train_indices = np.concatenate(self.train_indices, axis=0)
+
+        concatenated_fluent_clips = np.concatenate(self.fluent_clip_list, axis=0)
+        self.input_mean = concatenated_fluent_clips.mean(axis=0, keepdims=True)  # axis=0
+        self.input_std = concatenated_fluent_clips.std(axis=0, keepdims=True)
+
+        concatenated_disfluent_clips = np.concatenate(self.disfluent_clip_list, axis=0)
+        self.condition_mean = concatenated_disfluent_clips.mean(axis=0, keepdims=True)
+        self.condition_std = concatenated_disfluent_clips.std(axis=0, keepdims=True)
+
+        for i in range(len(self.examples)):
+            self.fluent_clip_list[i] = (self.fluent_clip_list[i] - self.input_mean) / self.input_std
+            self.disfluent_clip_list[i] = (self.disfluent_clip_list[i] - self.condition_mean) / self.condition_std
+
+        # Save cache for future runs
+        if self.use_cache:
+            print(f"Saving dataset to cache: {self.cache_file}")
+            self._save_to_cache()
+        print("Dataset initialized with {} samples. Split: {}".format(len(self.examples), split))
+
+    def _save_to_cache(self):
+        """Serialize dataset to cache file."""
+        data = {
+            'examples': self.examples,
+            'pose_header': self.pose_header,
+            'fluent_clip_list': self.fluent_clip_list,
+            'fluent_mask_list': self.fluent_mask_list,
+            'disfluent_clip_list': self.disfluent_clip_list,
+            'train_indices': self.train_indices,
+            'input_mean': self.input_mean,
+            'input_std': self.input_std,
+            'condition_mean': self.condition_mean,
+            'condition_std': self.condition_std,
+        }
+        try:
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as e:
+            print(f"[WARNING] Failed to save cache: {e}")
+
+    def _load_from_cache(self):
+        """Load dataset from cache file."""
+        try:
+            with open(self.cache_file, 'rb') as f:
+                data = pickle.load(f)
+            self.examples = data['examples']
+            self.pose_header = data['pose_header']
+            self.fluent_clip_list = data['fluent_clip_list']
+            self.fluent_mask_list = data['fluent_mask_list']
+            self.disfluent_clip_list = data['disfluent_clip_list']
+            self.train_indices = data['train_indices']
+            self.input_mean = data['input_mean']
+            self.input_std = data['input_std']
+            self.condition_mean = data['condition_mean']
+            self.condition_std = data['condition_std']
+        except Exception as e:
+            print(f"[WARNING] Failed to load cache, rebuilding: {e}")
+            # Fall back to fresh build
+
     def __len__(self) -> int:
         """
         Returns the number of samples in the dataset.
         """
-        return len(self.examples)
+        return len(self.train_indices)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """
@@ -82,101 +251,104 @@ class SignLanguagePoseDataset(Dataset):
         Args:
             idx (int): Index of the sample to retrieve.
         """
+        # Load metadata JSON for the current example to access original lengths
+        motion_idx = self.train_indices[idx][0]
+        metadata_path = self.examples[motion_idx]["metadata_path"]
+        with open(metadata_path, "r", encoding="utf-8") as mf:
+            meta_json = json.load(mf)
+        orig_fluent_len = meta_json.get("fluent_pose_length", None)
+        orig_disfluent_len = meta_json.get("disfluent_pose_length", None)
 
-        sample = self.examples[idx]
+        if self.split == "validation":
+            motion_idx = self.train_indices[idx][0]
+            full_seq = torch.from_numpy(self.fluent_clip_list[motion_idx].astype(np.float32))
+            disfluent_seq = torch.from_numpy(self.disfluent_clip_list[motion_idx].astype(np.float32))
 
-        # Load pose sequences and metadata from disk
-        with open(sample["fluent_path"], "rb") as f:
-            fluent_pose = Pose.read(f.read())
-        with open(sample["disfluent_path"], "rb") as f:
-            disfluent_pose = Pose.read(f.read())
-        with open(sample["metadata_path"], "r", encoding="utf-8") as f:
-            metadata = json.load(f)
+            # Construct previous_output for validation
+            history_len = self.history_len
+            num_keypoints = self.fluent_clip_list[motion_idx].shape[1]  # K
+            num_dims = self.fluent_clip_list[motion_idx].shape[2]  # D
 
-        # print(f"[DEBUG][Before Norm] Fluent raw data mean: {fluent_pose.body.data.mean(axis=(0, 1, 2))} std {fluent_pose.body.data.std(axis=(0, 1, 2))}")
-        # print(f"[DEBUG][Before Norm] Disfluent raw data mean: {disfluent_pose.body.data.mean(axis=(0, 1, 2))} std {disfluent_pose.body.data.std(axis=(0, 1, 2))}")
+            # Create a zero tensor for previous_output
+            # Its shape should be (history_len, K, D)
+            previous_output = torch.zeros((history_len, num_keypoints, num_dims), dtype=full_seq.dtype)
 
-        # Normalize the pose data
-        fluent_pose = normalize_mean_std(fluent_pose)
-        disfluent_pose = normalize_mean_std(disfluent_pose)
+            metadata = {
+                "original_example_index": int(motion_idx), "fluent_pose_length": orig_fluent_len,
+                "disfluent_pose_length": orig_disfluent_len
+            }
+            result = {
+                "data": full_seq,  # Full sequence, mainly used as reference for validation metrics
+                "conditions": {
+                    "input_sequence": disfluent_seq,  # Disfluent sequence as condition
+                    "previous_output": previous_output,  # Now the initial history is all zeros
+                },
+                "full_fluent_reference": full_seq,  # Full reference for DTW evaluation
+                "metadata": metadata,
+            }
+            return result
 
-        # print(f"DEBUG][After Norm] Fluent normalized data mean:: {fluent_pose.body.data.mean(axis=(0, 1, 2))} std {fluent_pose.body.data.std(axis=(0, 1, 2))}")
-        # print(f"[DEBUG][After Norm] Disfluent normalized data mean: {disfluent_pose.body.data.mean(axis=(0, 1, 2))} std {disfluent_pose.body.data.std(axis=(0, 1, 2))}")
+        item_frame_indice = self.train_indices[idx]
+        motion_idx, frame_indices = item_frame_indice[0], item_frame_indice[1:]
+        history_indices = frame_indices[:self.history_len]
+        target_indices = frame_indices[self.history_len:]
 
-        fluent_data = np.array(fluent_pose.body.data.astype(self.dtype))
-        fluent_mask = fluent_pose.body.data.mask
-        disfluent_data = np.array(disfluent_pose.body.data.astype(self.dtype))
+        history_chunk = self.fluent_clip_list[motion_idx][history_indices]
+        disfluent_seq = self.disfluent_clip_list[motion_idx]
+        # Process target_chunk and target_mask, set frame at -2 to all-zero frame with mask True, others remain unchanged
+        target_chunk_frames = []
+        target_mask_frames = []
+        single_frame_shape = self.fluent_clip_list[motion_idx][0].shape
+        single_mask_shape = self.fluent_mask_list[motion_idx][0].shape
+        for t_idx in target_indices:
+            if t_idx == -2:
+                target_chunk_frames.append(np.zeros(single_frame_shape, dtype=np.float32))
+                target_mask_frames.append(np.ones(single_mask_shape, dtype=bool))
+            else:
+                target_chunk_frames.append(self.fluent_clip_list[motion_idx][t_idx])
+                target_mask_frames.append(self.fluent_mask_list[motion_idx][t_idx])
+        target_chunk = np.stack(target_chunk_frames, axis=0)
+        target_mask = np.stack(target_mask_frames, axis=0)
 
-        fluent_length = len(fluent_data)
+        history_chunk[history_indices == -1].fill(0)
 
-        # 1. Randomly sample the start index for the fluent (target) chunk
-        if fluent_length <= self.chunk_len:
-            start_idx = 0
-            target_len = fluent_length
-            history_len = 0
-        else:
-            start_idx = random.randint(0, fluent_length - self.chunk_len)
-            target_len = self.chunk_len
-            history_len = start_idx
-
-        # 2. Extract target chunk (y_k) and history chunk (y_1, ..., y_{k-1})
-        target_chunk = fluent_data[start_idx : start_idx + target_len]
-        target_mask = fluent_mask[start_idx : start_idx + target_len]
-
-        if history_len > 0:
-            history_chunk = fluent_data[:history_len]
-        else:
-            # MODIFICATION: Force minimum length of 1 for previous_output if empty
-            history_chunk = np.zeros((1,) + fluent_data.shape[1:], dtype=self.dtype) # create a single empty frame
-            # The purpose of this is to ensure the current collate_fn works
-        # else:
-        #     # No history chunk available, create an empty array with time dimension 0
-        #     history_chunk = np.empty((0,) + fluent_data.shape[1:], dtype=self.dtype)
-
-        # 3. Prepare the entire disfluent sequence as condition
-        disfluent_seq = disfluent_data
-
-        # 4. Pad target chunk if its actual length is less than chunk_len
-        if target_chunk.shape[0] < self.chunk_len:
-            pad_len = self.chunk_len - target_chunk.shape[0]
-            # Padding 0s for target chunk
-            padding_shape_data = (pad_len,) + target_chunk.shape[1:]
-            target_padding = np.zeros(padding_shape_data, dtype=self.dtype)
-            target_chunk = np.concatenate([target_chunk, target_padding], axis=0)
-            # Padding for mask (True for masked)
-            mask_padding = np.ones((pad_len,) + target_mask.shape[1:], dtype=bool)
-            target_mask = np.concatenate([target_mask, mask_padding], axis=0)
-
-        # 5. Convert numpy arrays to torch tensors
+        # Convert numpy arrays to torch tensors
         target_chunk = torch.from_numpy(target_chunk.astype(np.float32))
         history_chunk = torch.from_numpy(history_chunk.astype(np.float32))
         disfluent_seq = torch.from_numpy(disfluent_seq.astype(np.float32))
-        target_mask = torch.from_numpy(target_mask) # Bool tensor
+        target_mask = torch.from_numpy(target_mask)  # Bool tensor
 
-        # 6. Squeeze person dimension
-        target_chunk = target_chunk.squeeze(1)    # (T_chunk, K, D)
-        history_chunk = history_chunk.squeeze(1)  # (T_hist, K, D)
-        disfluent_seq = disfluent_seq.squeeze(1)  # (T_disfl, K, D)
-        target_mask = target_mask.squeeze(1)      # (T_chunk, K, D)
-
-        # 7. Create conditions dictionary
-        # Later, zero_pad_collator will handle padding T_disfl and T_hist across the batch
+        # Create conditions dictionary
         conditions = {
-            "input_sequence": disfluent_seq,     # (T_disfl, K, D)
-            "previous_output": history_chunk,    # (T_hist, K, D)
-            "target_mask": target_mask           # (T_chunk, K, D)
+            "input_sequence": disfluent_seq,  # (T_disfl, K, D)
+            "previous_output": history_chunk,  # (T_hist, K, D)
+            "target_mask": target_mask,  # (T_chunk, K, D)
         }
 
-        # print(f"DEBUG Dataset idx {idx}:")
-        # print(f"  target_chunk shape: {target_chunk.shape}")
-        # print(f"  input_sequence shape: {disfluent_seq.shape}")
-        # print(f"  previous_output shape: {history_chunk.shape}")
-        # print(f"  target_mask shape: {target_mask.shape}")
+        # Get motion_idx, which points to the original sample index in self.examples
+        item_frame_indice = self.train_indices[idx]  # Assume split is not 'test', or test also uses train_indices
+        motion_idx = item_frame_indice[0]
 
-        return {
-            "data": target_chunk,   # (T_chunk, K, D)
+        # Create metadata dictionary
+        metadata = {
+            "original_example_index": int(motion_idx),  # Ensure it is Python int type
+            "original_disfluent_filepath": str(self.examples[motion_idx]["disfluent_path"]),
+            "fluent_pose_length": orig_fluent_len,
+            "disfluent_pose_length": orig_disfluent_len
+        }
+
+        # Build base return dictionary
+        result = {
+            "data": target_chunk,  # (T_chunk, K, D)
             "conditions": conditions,
+            "metadata": metadata,
         }
+        # If validation set, append full fluent reference sequence
+        if self.split == "validation":
+            # Take the full sequence from pre-normalized fluent_clip_list and convert to tensor
+            full_seq = torch.from_numpy(self.fluent_clip_list[motion_idx].astype(np.float32))
+            result["full_fluent_reference"] = full_seq  # (T_full, K, D)
+        return result
 
 
 def example_dataset():
@@ -206,7 +378,7 @@ def example_dataset():
 
     batch = next(iter(dataloader))
     print("Batch Keys:", batch.keys())
-    print("Conditions Keys:", batch['conditions'].keys())
+    print("Conditions Keys:", batch["conditions"].keys())
 
     print("\nShapes:")
     print(f"  data (Target Chunk): {batch['data'].shape}")
@@ -233,27 +405,3 @@ def example_dataset():
 
 # if __name__ == '__main__':
 #     example_dataset()
-
-
-# Example Output:
-# Dataset initialized with 128 samples. Split: train
-# Batch Keys: dict_keys(['data', 'conditions'])
-# Conditions Keys: dict_keys(['input_sequence', 'previous_output', 'target_mask'])
-
-# Shapes:
-#   data (Target Chunk): torch.Size([32, 40, 178, 3])
-#   conditions['input_sequence'] (Disfluent): torch.Size([32, 359, 178, 3])
-#   conditions['previous_output'] (History): torch.Size([32, 110, 178, 3])
-#   conditions['target_mask']: torch.Size([32, 40, 178, 3])
-
-# Normalization Stats (Shapes):
-#   Fluent Mean: torch.Size([1, 178, 3])
-#   Fluent Std: torch.Size([1, 178, 3])
-#   Disfluent Mean: torch.Size([1, 178, 3])
-#   Disfluent Std: torch.Size([1, 178, 3])
-
-# Sample Values (first element of first sequence):
-#   Target Chunk (first 5 flattened): tensor([ 9.0694e-02,  7.7781e-01, -7.0343e+02,  1.9091e-01, -8.7535e-01])
-#   History Chunk (first 5 flattened): tensor([0., 0., 0., 0., 0.])
-#   Disfluent Seq (first 5 flattened): tensor([ 0.1327,  1.0505, -1.7174,  0.2764, -0.7866])
-#   Target Mask (first 5 flattened): tensor([False, False, False, False, False])

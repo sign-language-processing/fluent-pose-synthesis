@@ -13,6 +13,7 @@ from CAMDM.diffusion.create_diffusion import create_gaussian_diffusion
 
 
 class DummyDataset(Dataset):
+
     def __len__(self):
         return 1
 
@@ -23,12 +24,8 @@ class DummyDataset(Dataset):
 def get_toy_batch(batch_size=2, seq_len=40, keypoints=178):
     assert batch_size == 2, "get_toy_batch currently only supports batch_size=2"
 
-    base_linear = torch.linspace(0, 1, seq_len * keypoints * 3).reshape(
-        seq_len, 1, keypoints, 3
-    )
-    base_sine = (
-        torch.sin(torch.linspace(0, 4 * np.pi, seq_len)).unsqueeze(1).unsqueeze(2)
-    )  # [T, 1, 1]
+    base_linear = torch.linspace(0, 1, seq_len * keypoints * 3).reshape(seq_len, 1, keypoints, 3)
+    base_sine = (torch.sin(torch.linspace(0, 4 * np.pi, seq_len)).unsqueeze(1).unsqueeze(2))  # [T, 1, 1]
     base_sine = base_sine.expand(seq_len, 1, keypoints).unsqueeze(-1)  # [T, 1, K, 1]
     base_sine = base_sine.repeat(1, 1, 1, 3)  # [T, 1, K, 3]
 
@@ -125,11 +122,8 @@ def test_overfit_toy_batch():
 
     # Move batch to device
     batch = {
-        k: (
-            v.to(config.device)
-            if isinstance(v, torch.Tensor)
-            else {kk: vv.to(config.device) for kk, vv in v.items()}
-        )
+        k: (v.to(config.device) if isinstance(v, torch.Tensor) else {kk: vv.to(config.device)
+                                                                     for kk, vv in v.items()})
         for k, v in batch.items()
     }
 
@@ -166,12 +160,8 @@ def test_overfit_toy_batch():
     losses = []
 
     for step in range(config.trainer.epoch):
-        t, weights = trainer.schedule_sampler.sample(
-            config.trainer.batch_size, config.device
-        )
-        _, loss_dict = trainer.diffuse(
-            batch["data"], t, batch["conditions"], return_loss=True
-        )
+        t, weights = trainer.schedule_sampler.sample(config.trainer.batch_size, config.device)
+        _, loss_dict = trainer.diffuse(batch["data"], t, batch["conditions"], return_loss=True)
         loss = (loss_dict["loss"] * weights).mean()
         losses.append(loss.item())
         print(f"[Step {step}] Loss: {loss.item():.6f}")
@@ -180,9 +170,7 @@ def test_overfit_toy_batch():
         loss.backward()
         optimizer.step()
 
-    assert (
-        losses[-1] < 1e-3
-    ), "Final loss is too high. Model failed to overfit the toy batch."
+    assert (losses[-1] < 1e-3), "Final loss is too high. Model failed to overfit the toy batch."
     plot_loss_curve(losses, save_path="overfit_loss_curve.png")
 
     # Check model output differences
@@ -209,9 +197,7 @@ def test_overfit_toy_batch():
             config.arch.keypoints,
             config.arch.dims,
         )
-        assert (
-            out1.shape == out2.shape == expected_shape
-        ), f"Unexpected output shape, expected {expected_shape}"
+        assert (out1.shape == out2.shape == expected_shape), f"Unexpected output shape, expected {expected_shape}"
 
         # Compute multiple metrics to assess output difference
         l2_diff = torch.norm(out1 - out2).item()
@@ -223,9 +209,7 @@ def test_overfit_toy_batch():
         print(f"Cosine distance: {cosine_dist:.6f}")
 
         # Assert based on multiple metrics
-        assert (
-            avg_kpt_error > 0.01 or cosine_dist > 0.01
-        ), "Outputs are too similar. Possible collapse."
+        assert (avg_kpt_error > 0.01 or cosine_dist > 0.01), "Outputs are too similar. Possible collapse."
 
     print("Overfitting test passed.")
 
@@ -252,6 +236,7 @@ def compute_average_keypoint_error(pose1, pose2):
     diff = torch.norm(pose1 - pose2, dim=-1)  # [B, T, K]
     return diff.mean().item()  # scalar
 
+
 def compute_cosine_distance(pose1, pose2):
     """
     Computes cosine distance between flattened pose vectors.
@@ -259,7 +244,7 @@ def compute_cosine_distance(pose1, pose2):
     """
     v1 = pose1.flatten()
     v2 = pose2.flatten()
-    cos = F.cosine_similarity(v1, v2, dim=0)    # pylint: disable=not-callable
+    cos = F.cosine_similarity(v1, v2, dim=0)  # pylint: disable=not-callable
     return 1 - cos.item()
 
 
