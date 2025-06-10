@@ -258,12 +258,23 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     loss_data_accel = masked_l2_per_sample(target_accel, model_output_accel, mask_accel, reduce=True)
                     loss_terms["loss_data_accel"] = loss_data_accel
 
-            # --- Compute Weighted Total Loss ---
-            total_loss = loss_terms.get("loss_data", 0.0)
+            # --- Compute Weighted Total Loss (Bullet-proof version) ---
+            # Initialize a new zero tensor for total_loss to avoid in-place side effects
+            total_loss = torch.tensor(0.0, device=self.device)
+
+            # Accumulate each component without using in-place operations
+            if "loss_data" in loss_terms:
+                total_loss = total_loss + loss_terms["loss_data"]
+
+            lambda_vel = getattr(self.config.trainer, "lambda_vel", 1.0)
             if "loss_data_vel" in loss_terms:
-                total_loss += lambda_vel * loss_terms["loss_data_vel"]
+                total_loss = total_loss + (lambda_vel * loss_terms["loss_data_vel"])
+
+            lambda_accel = getattr(self.config.trainer, "lambda_accel", 1.0)
             if "loss_data_accel" in loss_terms:
-                total_loss += lambda_accel * loss_terms["loss_data_accel"]
+                total_loss = total_loss + (lambda_accel * loss_terms["loss_data_accel"])
+
+            # Store the combined result
             loss_terms["loss"] = total_loss
 
             return model_output_original_shape, loss_terms
@@ -429,6 +440,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
     # Override the run_loop method to include validation
     def run_loop(self, enable_profiler=False, profiler_directory="./logs/tb_profiler"):
+        print(">>> TRAINING CODE LOADED FROM:", __file__)
         use_amp = getattr(self.config.trainer, "use_amp", False)
         # Initialize gradient scaler for mixed precision
         if use_amp:
@@ -543,9 +555,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
                                 epoch_losses[key_name] = []
                             epoch_losses[key_name].append(prior_losses[key_name].mean().item())
 
-            loss_str = ""
-            for key in epoch_losses.keys():
-                loss_str += f"{key}: {np.mean(epoch_losses[key]):.6f}, "
+            loss_str = (f"loss_data: {np.mean(epoch_losses['loss_data']):.6f}, "
+                        f"loss_data_vel: {np.mean(epoch_losses['loss_data_vel']):.6f}, "
+                        f"loss: {np.mean(epoch_losses['loss']):.6f}")
 
             epoch_avg_loss = np.mean(epoch_losses["loss"])
 
