@@ -1,4 +1,4 @@
-from typing import Optional, Callable
+from typing import Optional
 import torch
 import torch.nn as nn  # pylint: disable=consider-using-from-import
 
@@ -117,15 +117,6 @@ class SignLanguagePoseDiffusion(nn.Module):
             previous_output: Optional[torch.Tensor] = None  # (B, K, D, T_hist)
     ) -> torch.Tensor:
 
-        # # --- DEBUG: Print Initial Input Shapes ---
-        # print("\n--- Entering SignLanguagePoseDiffusion Forward ---")
-        # print(f"[DEBUG FWD Init] fluent_clip shape: {fluent_clip.shape}, device: {fluent_clip.device}")
-        # print(f"[DEBUG FWD Init] disfluent_seq shape: {disfluent_seq.shape}, device: {disfluent_seq.device}")
-        # print(f"[DEBUG FWD Init] t shape: {t.shape}, device: {t.device}")
-        # print(f"[DEBUG FWD Init] previous_output shape: {previous_output.shape if previous_output is not None else 'None'}, device: {previous_output.device if previous_output is not None else 'N/A'}")
-        # print(f"[DEBUG FWD Init] Target device: {self.device}")
-        # # ---
-
         # Ensure inputs are on the correct device
         fluent_clip = fluent_clip.to(self.device)
         disfluent_seq = disfluent_seq.to(self.device)
@@ -138,62 +129,43 @@ class SignLanguagePoseDiffusion(nn.Module):
 
         # 1. Embed Timestep
         _t_emb_raw = self.embed_timestep(t)  # Expected (B, D)
-        # print(f"[DEBUG FWD 1a] Raw t_emb shape: {_t_emb_raw.shape}")
         t_emb = _t_emb_raw.permute(1, 0, 2).contiguous()
-        # print(f"[DEBUG FWD 1b] Final t_emb shape: {t_emb.shape}")
 
         # 2. Embed Disfluent Sequence (Condition)
         _disfluent_emb_raw = self.disfluent_encoder(disfluent_seq)  # Expected (T_disfl, B, D)
-        # print(f"[DEBUG FWD 2a] Raw disfluent_emb shape: {_disfluent_emb_raw.shape}")
         disfluent_emb = _disfluent_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_disfl, D)
-        # print(f"[DEBUG FWD 2b] Final disfluent_emb shape: {disfluent_emb.shape}")
 
         # 3. Embed Previous Output (History), if available
         embeddings_to_concat = [t_emb, disfluent_emb]
-        # print("[DEBUG FWD 3a] Processing previous_output...")
         if previous_output is not None and previous_output.shape[-1] > 0:
-            # print(f"[DEBUG FWD 3b] History Input shape: {previous_output.shape}")
             _prev_out_emb_raw = self.fluent_encoder(previous_output)  # Expected (T_hist, B, D)
-            # print(f"[DEBUG FWD 3c] Raw prev_out_emb shape: {_prev_out_emb_raw.shape}")
             prev_out_emb = _prev_out_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_hist, D)
-            # print(f"[DEBUG FWD 3d] Final prev_out_emb shape: {prev_out_emb.shape}")
             embeddings_to_concat.append(prev_out_emb)
         else:
-            # print("[DEBUG FWD 3b] No previous_output provided or it's empty.")
             pass
 
         # 4. Embed Current Fluent Clip (Noisy Target 'x')
         _fluent_emb_raw = self.fluent_encoder(fluent_clip)  # Expected (T_chunk, B, D)
-        # print(f"[DEBUG FWD 4a] Raw fluent_emb shape: {_fluent_emb_raw.shape}")
         fluent_emb = _fluent_emb_raw.permute(1, 0, 2).contiguous()  # Expected (B, T_chunk, D)
-        # print(f"[DEBUG FWD 4b] Final fluent_emb shape: {fluent_emb.shape}")
         embeddings_to_concat.append(fluent_emb)
 
         # 5. Concatenate all embeddings along the sequence dimension (T)
         xseq = torch.cat(embeddings_to_concat, dim=1)
-        # print(f"[DEBUG FWD 5] Concatenated xseq shape: {xseq.shape}") # Expected (B, T_total, D)
 
         # 6. Apply Positional Encoding
-        # print(f"[DEBUG FWD 6a] xseq shape before PositionalEncoding: {xseq.shape}")
         # Adapt based on PositionalEncoding expectation (T, B, D) vs batch_first
         if self.batch_first:
             xseq_permuted = xseq.permute(1, 0, 2).contiguous()  # (T_total, B, D)
-            # print(f"[DEBUG FWD 6b] xseq permuted for PosEnc: {xseq_permuted.shape}")
             xseq_encoded = self.sequence_pos_encoder(xseq_permuted)
-            # print(f"[DEBUG FWD 6c] xseq after PosEnc: {xseq_encoded.shape}")
             xseq = xseq_encoded.permute(1, 0, 2)  # Back to (B, T_total, D)
-            # print(f"[DEBUG FWD 6d] xseq permuted back: {xseq.shape}")
         else:
             # If not batch_first, assume xseq should be (T, B, D) already
             # Need to adjust concatenation and permutations above if batch_first=False
             xseq = xseq.permute(1, 0, 2)  # Assume needs (T, B, D)
-            #  print(f"[DEBUG FWD 6b] xseq permuted for PosEnc (batch_first=False): {xseq.shape}")
             xseq = self.sequence_pos_encoder(xseq)
-        #  print(f"[DEBUG FWD 6c] xseq after PosEnc (batch_first=False): {xseq.shape}")
         # Keep as (T, B, D) if encoder needs it
 
         # 7. Process through sequence encoder
-        # print(f"[DEBUG FWD 7a] Input to sequence_encoder ({self.arch}) shape: {xseq.shape}")
         if self.arch == "trans_enc":
             x_encoded = self.sequence_encoder(xseq)
         elif self.arch == "gru":
@@ -204,27 +176,20 @@ class SignLanguagePoseDiffusion(nn.Module):
             x_encoded = self.sequence_encoder(tgt=tgt, memory=memory)
         else:
             raise ValueError("Unsupported architecture")
-        # print(f"[DEBUG FWD 7b] Output from sequence_encoder shape: {x_encoded.shape}")
 
         # 8. Extract the output corresponding to the target fluent_clip
         if self.batch_first:
             # x_encoded is (B, T_total, D), take last T_chunk frames
             x_out = x_encoded[:, -T_chunk:, :]
-            # print(f"[DEBUG FWD 8a] Extracted x_out (batch_first) shape: {x_out.shape}") # Expected (B, T_chunk, D)
             # Permute to (T_chunk, B, D) for pose_projection
             x_out = x_out.permute(1, 0, 2)
-            # print(f"[DEBUG FWD 8b] Permuted x_out for projection shape: {x_out.shape}") # Expected (T_chunk, B, D)
         else:
             # x_encoded is (T_total, B, D), take last T_chunk frames
             x_out = x_encoded[-T_chunk:, :, :]
-            # print(f"[DEBUG FWD 8a] Extracted x_out (not batch_first) shape: {x_out.shape}") # Expected (T_chunk, B, D)
             # No permute needed if pose_projection expects (T, B, D)
 
         # 9. Project back to pose space
-        # print(f"[DEBUG FWD 9a] Input to pose_projection shape: {x_out.shape}")
         output = self.pose_projection(x_out)
-        # print(f"[DEBUG FWD 9b] Final output shape: {output.shape}") # Expected (B, K, D, T_chunk)
-        # print("--- Exiting SignLanguagePoseDiffusion Forward ---\n")
 
         return output
 

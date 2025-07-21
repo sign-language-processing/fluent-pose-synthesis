@@ -1,6 +1,4 @@
 import sys
-import os
-
 import time
 import shutil
 import argparse
@@ -17,10 +15,10 @@ from pose_format.torch.masked.collator import zero_pad_collator
 from CAMDM.diffusion.create_diffusion import create_gaussian_diffusion
 from CAMDM.utils.common import fixseed, select_platform
 from CAMDM.utils.logger import Logger
+
 from fluent_pose_synthesis.core.models import SignLanguagePoseDiffusion
 from fluent_pose_synthesis.core.training import PoseTrainingPortal
 from fluent_pose_synthesis.data.load_data import SignLanguagePoseDataset
-
 from fluent_pose_synthesis.config.option import (
     add_model_args,
     add_train_args,
@@ -45,6 +43,8 @@ _original_torch_load = torch.load
 
 def patched_torch_load(*args, **kwargs):
     kwargs.setdefault("weights_only", False)
+    if not torch.cuda.is_available():
+        kwargs.setdefault("map_location", torch.device('cpu'))
     return _original_torch_load(*args, **kwargs)
 
 
@@ -58,19 +58,14 @@ def train(
     tb_writer: SummaryWriter,
 ):
     """Main training loop for sign language pose post-editing."""
-    fixseed(1024)
     np_dtype = select_platform(32)
 
     # Training Dataset and Dataloader
     logger.info("Loading training dataset...")
-    train_dataset = SignLanguagePoseDataset(
-        data_dir=config.data,
-        split="train",
-        chunk_len=config.arch.chunk_len,
-        history_len=getattr(config.arch, "history_len", 5),
-        dtype=np_dtype,
-        limited_num=config.trainer.load_num,
-    )
+    train_dataset = SignLanguagePoseDataset(data_dir=config.data, split="train", chunk_len=config.arch.chunk_len,
+                                            history_len=getattr(config.arch, "history_len", 10), dtype=np_dtype,
+                                            limited_num=config.trainer.load_num, min_condition_length=25,
+                                            fixed_condition_length=200)
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=config.trainer.batch_size,
@@ -87,11 +82,12 @@ def train(
     logger.info("Loading validation dataset...")
     validation_dataset = SignLanguagePoseDataset(data_dir=config.data, split="validation",
                                                  chunk_len=config.arch.chunk_len,
-                                                 history_len=getattr(config.arch, "history_len", 5), dtype=np_dtype,
-                                                 limited_num=config.trainer.load_num)
+                                                 history_len=getattr(config.arch, "history_len", 10), dtype=np_dtype,
+                                                 limited_num=config.trainer.load_num, min_condition_length=25,
+                                                 fixed_condition_length=200)
     validation_dataloader = DataLoader(
         validation_dataset,
-        batch_size=config.trainer.batch_size,
+        batch_size=1,  # Dynamic lengths, so batch size is 1
         shuffle=False,  # No need to shuffle validation data
         num_workers=config.trainer.workers,
         drop_last=False,
@@ -169,10 +165,11 @@ def main():
     parser.add_argument(
         "-s",
         "--save",
-        default="save/debug_run",
+        default="save",
         type=str,
         help="Directory to save model and logs",
     )
+    parser.add_argument("--seed", type=int, default=1024, help="Random seed for reproducibility")
     parser.add_argument("--cluster", action="store_true", help="Enable cluster mode")
 
     add_model_args(parser)
@@ -180,6 +177,7 @@ def main():
     add_train_args(parser)
 
     args = parser.parse_args()
+    fixseed(args.seed)
     config = config_parse(args)
 
     # Convert key paths to Path objects
@@ -235,7 +233,9 @@ def main():
 
 
 def config_to_dict(config_namespace):
-    """Helper to convert SimpleNamespace (recursively) to dict for JSON."""
+    """
+    Helper to convert SimpleNamespace (recursively) to dict for JSON.
+    """
     if isinstance(config_namespace, SimpleNamespace):
         return {k: config_to_dict(v) for k, v in vars(config_namespace).items()}
     elif isinstance(config_namespace, Path):

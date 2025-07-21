@@ -27,20 +27,9 @@ def get_dummy_batch(batch_size=2, seq_len=50, keypoints=178, dims=3):
 def test_base_output_shape(arch, seq_len, batch_size):
     device = torch.device("cpu")
 
-    model = SignLanguagePoseDiffusion(
-        input_feats=534,
-        chunk_len=seq_len,
-        keypoints=178,
-        dims=3,
-        latent_dim=256,
-        ff_size=256,
-        num_layers=2,
-        num_heads=4,
-        dropout=0.2,
-        arch=arch,
-        cond_mask_prob=0.1,
-        device=device
-    ).to(device)
+    model = SignLanguagePoseDiffusion(input_feats=534, chunk_len=seq_len, keypoints=178, dims=3, latent_dim=256,
+                                      ff_size=256, num_layers=2, num_heads=4, dropout=0.2, arch=arch,
+                                      cond_mask_prob=0.1, device=device).to(device)
 
     fluent_clip, conditions, t = get_dummy_batch(batch_size=batch_size, seq_len=seq_len)
 

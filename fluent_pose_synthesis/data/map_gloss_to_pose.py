@@ -1,15 +1,12 @@
 from typing import Dict, List, Tuple, Any
 import tensorflow as tf
 
-
 # Define types
 PoseDict = Dict[str, Dict[str, Any]]
 ConflictDict = Dict[str, List[Dict[str, Any]]]
 
 
-def create_gloss_to_pose_dict(
-    dgs_types_dataset: tf.data.Dataset,
-) -> Tuple[PoseDict, ConflictDict]:
+def create_gloss_to_pose_dict(dgs_types_dataset: tf.data.Dataset, ) -> Tuple[PoseDict, ConflictDict]:
     """
     Generate a mapping of glosses to their corresponding pose data from DGS Types dataset.
     """
@@ -50,13 +47,11 @@ def create_gloss_to_pose_dict(
                     # Record conflict for debugging
                     if gloss not in gloss_pose_conflicts:
                         gloss_pose_conflicts[gloss] = []
-                    gloss_pose_conflicts[gloss].append(
-                        {
-                            "pose": pose,
-                            "id": datum_id,
-                            "type": "Galex" if is_galex else "DGS Types",
-                        }
-                    )
+                    gloss_pose_conflicts[gloss].append({
+                        "pose": pose,
+                        "id": datum_id,
+                        "type": "Galex" if is_galex else "DGS Types",
+                    })
                     # Replace if existing entry is from Galex and new one is from DGS Types
                     # Otherwise (both are from the same source or new one is from Galex), keep the existing entry
                     if existing_is_galex and not is_galex:
@@ -70,18 +65,5 @@ def create_gloss_to_pose_dict(
                     **original_data,
                     "views": {**original_data["views"], "pose": pose},
                 }
-
-    # # Print conflicts summary
-    # print("\n--- Gloss-Pose Conflicts Summary ---")
-    # for gloss, conflicts in gloss_pose_conflicts.items():
-    #     print(f"\nGloss '{gloss}' had conflicts:")
-    #     first_entry = gloss_to_pose_dict[gloss]
-    #     first_id = first_entry['id'].numpy().decode('utf-8')
-    #     print(f"  Final chosen pose (ID: {first_id}):")
-    #     print(f"    {first_entry['views']['pose']}")
-    #     print("  Conflicting entries:")
-    #     for conflict in conflicts:
-    #         print(f"    - {conflict['type']} (ID: {conflict['id']})")
-    #         print(f"      Pose: {conflict['pose']}")
 
     return gloss_to_pose_dict, gloss_pose_conflicts
