@@ -6,7 +6,7 @@ from types import SimpleNamespace as Namespace
 def add_model_args(parser):
     parser.add_argument('--decoder', type=str, default='trans_enc', help='Decoder type.')
     parser.add_argument('--latent_dim', type=int, default=256, help='Transformer/GRU latent dimension.')
-    parser.add_argument('--ff_size', type=int, default=512, help='Feed-forward size.')
+    parser.add_argument('--ff_size', type=int, default=1024, help='Feed-forward size.')
     parser.add_argument('--num_heads', type=int, default=4, help='Number of attention heads.')
     parser.add_argument('--num_layers', type=int, default=4, help='Number of model layers.')
 
@@ -27,7 +27,7 @@ def add_train_args(parser):
     parser.add_argument('--workers', type=int, default=4, help='Data loader workers.')
     parser.add_argument('--ema', default=False, type=bool,
                         help='Use Exponential Moving Average (EMA) for model parameters.')
-    parser.add_argument('--lambda_vel', type=float, default=1.0, help='Weight factor for the velocity loss term.')
+    parser.add_argument('--lambda_vel', type=float, default=0.0, help='Weight factor for the velocity loss term.')
     parser.add_argument('--use_loss_vel', action='store_true', default=True, help='Enable velocity loss term.')
     parser.add_argument('--use_loss_accel', action='store_true', default=False, help='Enable acceleration loss term.')
     parser.add_argument('--lambda_accel', type=float, default=1.0, help='Weight factor for the acceleration loss term.')
@@ -62,7 +62,7 @@ def config_parse(args):
     config.trainer.ema = True  #if args.ema else config.trainer.ema
     config.trainer.cond_mask_prob = args.cond_mask_prob
     config.trainer.workers = args.workers
-    config.trainer.save_freq = int(config.trainer.epoch // 5)
+    config.trainer.save_freq = int(config.trainer.epoch // 100)
     config.trainer.lambda_vel = args.lambda_vel
     config.trainer.use_loss_vel = args.use_loss_vel
     config.trainer.use_loss_accel = args.use_loss_accel

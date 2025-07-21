@@ -1,10 +1,11 @@
 {
+    "seed": 1024,
     "arch": {
         "decoder": "trans_enc",
-        "latent_dim": 512,
+        "latent_dim": 256,
         "ff_size": 1024,
         "num_heads": 4,
-        "num_layers": 8,
+        "num_layers": 4,
         "chunk_len": 40,
         "keypoints": 178,
         "dims": 3,
@@ -12,7 +13,7 @@
         "activation": "gelu",
         "ablation": null,
         "legacy": false,
-        "history_len": 5
+        "history_len": 10
     },
     "diff": {
         "noise_schedule": "cosine",
@@ -27,12 +28,11 @@
         "use_loss_mse": true,
         "use_loss_vel": true,
         "use_loss_accel": false,
-        "lambda_vel": 1.0,
-        "lambda_accel": 1.0,
+        "lambda_vel": 0,
+        "lambda_accel": 0,
         "guidance_scale": 2.0,
         "workers": 4,
         "load_num": -1,
-        "validation_max_len": 160,
         "validation_chunk_size": 40,
         "validation_stop_threshold": 1e-4,
         "eval_freq": 1,

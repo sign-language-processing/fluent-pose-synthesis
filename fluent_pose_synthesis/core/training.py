@@ -1,22 +1,20 @@
 # pylint: disable=protected-access, arguments-renamed
-from typing import Optional, Tuple, Dict, Any, List
-from pathlib import Path
 import itertools
 import time
+from typing import Optional, Tuple, Dict, Any, List
+from pathlib import Path
+
 import numpy as np
 import torch
 from torch import Tensor
-from torch.utils.data import DataLoader
-from torch.utils.data import Subset, DataLoader
-from tqdm import tqdm
+from torch.utils.data import DataLoader, Subset
 from torch.amp import GradScaler, autocast
 import torch.nn as nn
+from tqdm import tqdm
 
 from pose_format import Pose
 from pose_format.torch.masked.collator import zero_pad_collator
 from pose_format.numpy.pose_body import NumPyPoseBody
-from pose_format.utils.generic import normalize_pose_size
-from pose_anonymization.data.normalization import unnormalize_mean_std
 from pose_evaluation.metrics.distance_metric import DistanceMetric
 from pose_evaluation.metrics.dtw_metric import DTWDTAIImplementationDistanceMeasure
 from pose_evaluation.metrics.pose_processors import NormalizePosesProcessor
@@ -150,9 +148,9 @@ class PoseTrainingPortal(BaseTrainingPortal):
             x_start: Ground truth target pose chunk. Expected shape from loader: (B, T_chunk, K, D).
             t: Diffusion timesteps for each sample. Shape: (B,)
             cond: Conditioning inputs dict. Expected keys:
-                  'input_sequence': Full disfluent sequence (B, T_disfl, K, D)
-                  'previous_output': Fluent history (B, T_hist, K, D)
-                  'target_mask': Mask for the target chunk (B, T_chunk, K, D)
+                  "input_sequence": Full disfluent sequence (B, T_disfl, K, D)
+                  "previous_output": Fluent history (B, T_hist, K, D)
+                  "target_mask": Mask for the target chunk (B, T_chunk, K, D)
             noise: Optional noise tensor. If None, generated internally.
             return_loss: Whether to compute and return training losses.
         """
@@ -238,7 +236,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 # loss_data = torch.nn.MSELoss()(model_output, target)
                 loss_terms["loss_data"] = loss_data
 
-            # --- Velocity Loss ---
+            # Velocity Loss
             lambda_vel = getattr(self.config.trainer, "lambda_vel", 1.0)
             if self.config.trainer.use_loss_vel:
                 # Compute first-order difference (velocity)
@@ -248,7 +246,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 loss_data_vel = masked_l2_per_sample(target_vel, model_output_vel, mask_vel, reduce=True)
                 loss_terms["loss_data_vel"] = loss_data_vel
 
-                # --- Optional: Acceleration Loss ---
+                # Optional: Acceleration Loss
                 if getattr(self.config.trainer, "use_loss_accel", False):
                     lambda_accel = getattr(self.config.trainer, "lambda_accel", 1.0)
                     # Compute second-order difference (acceleration)
@@ -258,7 +256,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     loss_data_accel = masked_l2_per_sample(target_accel, model_output_accel, mask_accel, reduce=True)
                     loss_terms["loss_data_accel"] = loss_data_accel
 
-            # --- Compute Weighted Total Loss (Bullet-proof version) ---
+            # Compute Weighted Total Loss
             # Initialize a new zero tensor for total_loss to avoid in-place side effects
             total_loss = torch.tensor(0.0, device=self.device)
 
@@ -323,7 +321,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # Permute formats and prepare history
             disfluent_cond_seq = disfluent_cond_seq_loader.permute(0, 2, 3, 1)
             current_history = initial_history_loader.permute(0, 2, 3, 1)
-            history_len = getattr(self.config.arch, "history_len", 5)
+            history_len = getattr(self.config.arch, "history_len", 10)
             # Trim or pad history
             if current_history.shape[3] > history_len:
                 current_history = current_history[:, :, :, -history_len:]
@@ -334,7 +332,22 @@ class PoseTrainingPortal(BaseTrainingPortal):
             # Prepare autoregressive generation
             K = self.config.arch.keypoints
             D_feat = self.config.arch.dims
-            max_len = getattr(self.config.trainer, "validation_max_len", 160)
+            # DYNAMIC MAX_LEN CALCULATION
+            # Get the lengths of the disfluent sequences from the batch metadata
+            disfluent_lengths = batch_data["metadata"]["disfluent_pose_length"].to(self.device)
+            # Apply 200-frame upper bound to disfluent lengths
+            len_for_calc = torch.min(disfluent_lengths, torch.tensor(200.0, device=self.device))
+            # Linear regression-based mapping from disfluent to fluent length
+            slope_a = 0.32  # coefficient `a` from regression
+            intercept_b = 16.37  # intercept `b` from regression
+            target_fluent_lengths = (slope_a * len_for_calc + intercept_b).clamp(min=1).int()
+            # The max_len for this batch is the longest required fluent length
+            max_len = torch.max(target_fluent_lengths).item()
+            if self.logger and batch_idx == 0:  # Log only for the first batch to avoid spam
+                self.logger.info(
+                    f'Validation sample {batch_idx}: Original disfluent length: {disfluent_lengths.item()}, Length used for calc: {len_for_calc.item()}, Dynamic target length: {max_len} frames'
+                )
+
             chunk_size = getattr(self.config.trainer, "validation_chunk_size", self.config.arch.chunk_len)
             stop_thresh = getattr(self.config.trainer, "validation_stop_threshold", 1e-4)
             generated = torch.empty(current_history.shape[0], K, D_feat, 0, device=self.device)
@@ -345,7 +358,7 @@ class PoseTrainingPortal(BaseTrainingPortal):
                     break
                 n_frames = min(chunk_size, max_len - generated.shape[3])
                 target_shape = (current_history.shape[0], K, D_feat, n_frames)
-                # --- Use classifier-free guidance ---
+                # Use classifier-free guidance
                 cond_dict = {"input_sequence": disfluent_cond_seq, "previous_output": current_history}
                 guidance_scale = getattr(self.config.trainer, "guidance_scale", 2.0)
                 # Unconditional input: zero out the disfluent sequence
@@ -440,7 +453,6 @@ class PoseTrainingPortal(BaseTrainingPortal):
 
     # Override the run_loop method to include validation
     def run_loop(self, enable_profiler=False, profiler_directory="./logs/tb_profiler"):
-        print(">>> TRAINING CODE LOADED FROM:", __file__)
         use_amp = getattr(self.config.trainer, "use_amp", False)
         # Initialize gradient scaler for mixed precision
         if use_amp:
@@ -632,28 +644,29 @@ class PoseTrainingPortal(BaseTrainingPortal):
                 if self.tb_writer and val_losses:
                     avg_val_loss = np.mean(val_losses)
                     self.tb_writer.add_scalar("validation/loss", avg_val_loss, self.epoch)
-                    # --- Save the fixed 30 (or as defined in validation_save_num) validation predictions and corresponding GT results ---
+                    # Save the fixed 30 (or as defined in validation_save_num) validation predictions and corresponding GT results
                     save_dir = Path(self.config.save) / "validation_samples" / f"epoch_{self.epoch}"
                     mkdir(save_dir)
                     sample_indices = self.validation_sample_indices
                     val_save_loader = DataLoader(
                         Subset(val_dataset, sample_indices),
-                        batch_size=len(sample_indices),
+                        batch_size=1,
                         shuffle=False,
                         num_workers=self.config.trainer.workers,
                         pin_memory=True,
                         collate_fn=zero_pad_collator,
                     )
-                    for batch_idx, batch_data in enumerate(val_save_loader):
-                        refs, preds = self._process_validation_batch(batch_data, batch_idx)
-                        for i, (ref, pred) in enumerate(zip(refs, preds)):
-                            idx = sample_indices[batch_idx * len(preds) + i]
-                            ref_path = save_dir / f"ref_epoch{self.epoch}_idx{idx}.pose"
-                            with open(ref_path, "wb") as f:
-                                ref.write(f)
-                            pred_path = save_dir / f"pred_epoch{self.epoch}_idx{idx}.pose"
-                            with open(pred_path, "wb") as f:
-                                pred.write(f)
+                    for loader_idx, batch_data in enumerate(val_save_loader):
+                        refs, preds = self._process_validation_batch(batch_data, batch_idx=0)
+                        idx = sample_indices[loader_idx]
+                        ref = refs[0]
+                        pred = preds[0]
+                        ref_path = save_dir / f"ref_epoch{self.epoch}_idx{idx}.pose"
+                        with open(ref_path, "wb") as f:
+                            ref.write(f)
+                        pred_path = save_dir / f"pred_epoch{self.epoch}_idx{idx}.pose"
+                        with open(pred_path, "wb") as f:
+                            pred.write(f)
                     self.logger.info(f"Saved {len(sample_indices)} validation GT and predictions to {save_dir}")
 
         best_path = "%s/best.pt" % (self.config.save)
@@ -749,23 +762,10 @@ class PoseTrainingPortal(BaseTrainingPortal):
             pose_body = NumPyPoseBody(fps=25, data=pose_array, confidence=confidence)
             pose_obj = Pose(self.pose_header, pose_body)
 
-            # Unnormalize the pose data and normalize its size for export
-            # unnorm_pose = unnormalize_mean_std(pose_obj)
-            # Scale the pose back for visualization
-            # normalize_pose_size(unnorm_pose)
-
             file_path = f"{save_path}/pose_{i}.{prefix}.pose"
             with open(file_path, "wb") as f:
                 pose_obj.write(f)
-            # self.logger.info(f"Saved pose file: {file_path}")
 
             # Verify the file by reading it back
             with open(file_path, "rb") as f_check:
                 Pose.read(f_check.read())
-
-            # Extract and store the unnormalized numpy data
-            # unnorm_data_np = np.array(unnorm_pose.body.data.data.astype(pose_output_normalized_np.dtype)).squeeze(1) # (T, K, D)
-            # unnormalized_arrays.append(unnorm_data_np)
-
-            # If error occurs, the file was not written correctly
-            # self.logger.info(f"Pose file {file_path} read successfully.")
