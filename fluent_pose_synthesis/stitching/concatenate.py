@@ -78,8 +78,14 @@ class StitchConfig:
     # ended, reducing inter-sign wrist travel (0 = off, 1 = fully connected).
     coarticulate: float = 0.0
 
-    # Remove a hand that is idle for a sign (resting/low/undetected) so stitching
-    # interpolates it from active neighbours instead of snapping to a rest pose.
+    # Hide a hand only on frames where its arm hangs down (resting); everywhere
+    # else the hand is interpolated like the naive stitch. This is the rule that
+    # matches real signing — a hand is absent only when the arm is at rest.
+    hide_hands_arm_down: bool = False
+    arm_down_height: float = 0.15   # hide when wrist rel-height < this (1=shoulder, 0=hip)
+
+    # (legacy, off by default) drop a whole idle hand per sign — superseded by
+    # hide_hands_arm_down, which the naive-style interpolation makes unnecessary.
     drop_inactive_hands: bool = False
     # A hand is "resting" (droppable) when it moves little AND hangs low. Movement
     # is normalized by torso length; height is 1 at the shoulder, 0 at the hip.
@@ -552,6 +558,38 @@ def _anonymize(pose: Pose) -> Pose:
     return remove_appearance(pose)
 
 
+def _hide_hands_when_arm_down(pose: Pose, threshold: float) -> Pose:
+    """Mask a hand's keypoints on frames where its arm hangs down (wrist below
+    ``threshold`` of the way from hip to shoulder). The hand follows the real arm
+    (from the source clips) everywhere else — so it only disappears at rest."""
+    data = np.ma.getdata(pose.body.data)
+    conf = pose.body.confidence
+    mask = np.ma.getmaskarray(pose.body.data).copy()
+    comp_idx, offset = {}, 0
+    for c in pose.header.components:
+        comp_idx[c.name] = list(range(offset, offset + len(c.points)))
+        offset += len(c.points)
+    for side, comp in (("LEFT", "LEFT_HAND_LANDMARKS"), ("RIGHT", "RIGHT_HAND_LANDMARKS")):
+        if comp not in comp_idx:
+            continue
+        try:
+            wr = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_WRIST")
+            sh = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_SHOULDER")
+            hi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_HIP")
+        except Exception:
+            continue
+        torso = np.median(data[:, 0, hi, 1] - data[:, 0, sh, 1])
+        if not torso:
+            continue
+        rel = (data[:, 0, hi, 1] - data[:, 0, wr, 1]) / abs(torso)  # 1 shoulder, 0 hip
+        down = rel < threshold
+        for k in comp_idx[comp]:
+            conf[down, 0, k] = 0.0
+            mask[down, 0, k, :] = True
+    pose.body.data = np.ma.array(data, mask=mask)
+    return pose
+
+
 def _hand_activity(pose: Pose, side: str) -> tuple[float, float, float]:
     """(detected_fraction, torso-normalized movement, relative height) for a hand.
 
@@ -645,4 +683,6 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
         pose = _apply_hand_shift(pose, config.hand_shift)
     if config.rest_envelope:
         pose = _rest_envelope(pose, config)
+    if config.hide_hands_arm_down:
+        pose = _hide_hands_when_arm_down(pose, config.arm_down_height)
     return pose
