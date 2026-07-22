@@ -380,28 +380,28 @@ def _rest_envelope(pose: Pose, config: StitchConfig) -> Pose:
     normalize_pose_size(src)
     rd = np.ma.getdata(rest.body.data)[0]           # (people,points,dims)
     sd = np.ma.getdata(src.body.data)
-    smask = np.ma.getmaskarray(src.body.data)
+    sconf = src.body.confidence                      # (frames,people,points) — reliable
 
-    def ramp(end_frame, end_mask, rising: bool):
+    def ramp(end_frame, end_conf, rising: bool):
+        absent = end_conf <= 0                       # (people,points): keypoint not shown
         frames = np.empty((n, *end_frame.shape))
-        fmask = np.zeros((n, *end_frame.shape), dtype=bool)
+        confs = np.empty((n, *end_conf.shape))
         for i in range(n):
             t = (i + 1) / (n + 1)
-            te = t if rising else (1 - t)  # rising: rest->end ; lower: end->rest
-            frames[i] = rd * (1 - te) + end_frame * te
-            fmask[i] = end_mask  # absent hands stay absent through the ramp
-            frames[i][end_mask] = rd[end_mask]
-        return frames, fmask
+            te = t if rising else (1 - t)            # rising: rest->end ; lower: end->rest
+            fr = rd * (1 - te) + end_frame * te
+            fr[absent] = rd[absent]                  # absent keypoints parked (conf 0 -> not drawn)
+            frames[i] = fr
+            confs[i] = np.where(absent, 0.0, 1.0)
+        return frames, confs
 
-    lead, lead_m = ramp(sd[0], smask[0], rising=True)
-    tail, tail_m = ramp(sd[-1], smask[-1], rising=False)
-    new_data = np.ma.array(np.concatenate([lead, sd, tail]),
-                           mask=np.concatenate([lead_m, smask, tail_m]))
-    new_conf = np.concatenate([
-        np.where(lead_m[:, :, :, 0], 0.0, 1.0),
-        src.body.confidence,
-        np.where(tail_m[:, :, :, 0], 0.0, 1.0)])
-    return Pose(src.header, NumPyPoseBody(fps=src.body.fps, data=new_data, confidence=new_conf))
+    lead, lead_c = ramp(sd[0], sconf[0], rising=True)
+    tail, tail_c = ramp(sd[-1], sconf[-1], rising=False)
+    new_data = np.concatenate([lead, sd, tail])
+    new_conf = np.concatenate([lead_c, sconf, tail_c])
+    mask = np.broadcast_to((new_conf <= 0)[..., None], new_data.shape)
+    return Pose(src.header, NumPyPoseBody(fps=src.body.fps,
+                                          data=np.ma.array(new_data, mask=mask), confidence=new_conf))
 
 
 def _create_padding(seconds: float, example: Pose) -> NumPyPoseBody:
