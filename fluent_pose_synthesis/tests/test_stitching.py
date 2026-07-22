@@ -6,7 +6,7 @@ from pose_format import Pose
 from pose_format.numpy import NumPyPoseBody
 from pose_format.pose_header import PoseHeader, PoseHeaderComponent, PoseHeaderDimensions
 
-from fluent_pose_synthesis import BASELINE, StitchConfig, concatenate_poses
+from fluent_pose_synthesis import BASELINE, StitchConfig
 from fluent_pose_synthesis.stitching.concatenate import motion_complexity, resample_pose
 
 
@@ -53,3 +53,28 @@ def test_stitch_config_toggles():
     assert cfg.trim_method == "segmentation"
     assert cfg.padding == 0.0
     assert cfg.max_sign_frames == 25
+
+
+def test_butter_filter_preserves_shape():
+    from fluent_pose_synthesis.stitching.concatenate import _butter_filter
+
+    pose = _make_pose(60, points=5)
+    out = _butter_filter(pose, cutoff=8.0, order=4)
+    assert out.body.data.shape == pose.body.data.shape
+
+
+def test_bridge_frame_count():
+    from fluent_pose_synthesis.stitching.concatenate import _bridge_frames
+
+    a = np.zeros((1, 5, 3))
+    b = np.ones((1, 5, 3))
+    assert _bridge_frames(a, b, 4).shape[0] == 4
+    assert _bridge_frames(a, b, 0) is None
+
+
+def test_fluent_preset_exists():
+    from fluent_pose_synthesis.stitching.experiments import CONFIGS
+
+    assert "fluent" in CONFIGS
+    assert CONFIGS["fluent"].trim_method == "segmentation"
+    assert CONFIGS["fluent"].butter

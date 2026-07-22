@@ -51,6 +51,12 @@ CONFIGS: dict[str, StitchConfig] = {
     "seg_cap30": StitchConfig(trim_method="segmentation", max_sign_frames=30, padding=0.05),
     "seg_cap25": StitchConfig(trim_method="segmentation", max_sign_frames=25, padding=0.05),
     "seg_cap20": StitchConfig(trim_method="segmentation", max_sign_frames=20, padding=0.05),
+    # Recommended default: segmentation trim + Butterworth 9 Hz. Best dtwp on the
+    # DGS Corpus, halves over-length vs. baseline, and smooths seam jitter.
+    "fluent": StitchConfig(trim_method="segmentation", padding=0.0, butter=True, butter_cutoff=9.0),
+    # Tempo-matched variant (~natural length) at a small shape cost.
+    "fluent_short": StitchConfig(trim_method="segmentation", padding=0.0, butter=True,
+                                 butter_cutoff=9.0, max_sign_frames=40),
 }
 
 
@@ -80,8 +86,8 @@ def run(config_names: list[str], n: int, seed: int, out_dir: Path) -> dict:
         _dump_rows(out_dir / f"rows_{name}_n{n}_s{seed}.tsv", rows)
         print(f"  {name:14s} dtwp={agg.get('dtwp_mean', float('nan')):7.2f} "
               f"dtwpN={agg.get('dtwp_norm_mean', float('nan')):6.3f} "
+              f"dtwpM={agg.get('dtwp_matched_mean', float('nan')):7.2f} "
               f"len={agg.get('length_ratio_mean', float('nan')):5.2f} "
-              f"absΔ={agg.get('length_abs_err_mean', float('nan')):6.1f} "
               f"({agg['seconds']}s, {agg['errors']} err)")
 
     _print_comparison(results, out_dir, n, seed)
@@ -89,7 +95,7 @@ def run(config_names: list[str], n: int, seed: int, out_dir: Path) -> dict:
 
 
 def _dump_rows(path: Path, rows: list[dict]) -> None:
-    cols = ["key", "dtwp", "dtwp_norm", "length_ratio", "length_abs_err", "hyp_frames", "ref_frames", "coverage", "n_glosses", "error"]
+    cols = ["key", "dtwp", "dtwp_norm", "dtwp_matched", "length_ratio", "length_abs_err", "hyp_frames", "ref_frames", "coverage", "n_glosses", "error"]
     with open(path, "w") as f:
         f.write("\t".join(cols) + "\n")
         for r in rows:
@@ -100,17 +106,17 @@ def _dump_rows(path: Path, rows: list[dict]) -> None:
 
 def _print_comparison(results: dict, out_dir: Path, n: int, seed: int) -> None:
     base = results.get("baseline")
-    lines = ["", "=== SUMMARY (ranked by dtwp_norm; shape-fair, length-unbiased) ==="]
-    lines.append(f"{'config':16s} {'dtwp_norm':>10s} {'Δ%':>7s} {'dtwp_raw':>9s} {'len_ratio':>10s} {'len_absΔ':>9s}")
-    base_norm = base["agg"]["dtwp_norm_mean"] if base else None
-    ranked = sorted(results.items(), key=lambda kv: kv[1]["agg"].get("dtwp_norm_mean", 1e9))
+    lines = ["", "=== SUMMARY (ranked by dtwp_matched; shape at matched length) ==="]
+    lines.append(f"{'config':16s} {'dtwp_match':>10s} {'Δ%':>7s} {'dtwp_norm':>9s} {'dtwp_raw':>9s} {'len_ratio':>10s}")
+    base_m = base["agg"]["dtwp_matched_mean"] if base else None
+    ranked = sorted(results.items(), key=lambda kv: kv[1]["agg"].get("dtwp_matched_mean", 1e9))
     for name, res in ranked:
         a = res["agg"]
-        d = a.get("dtwp_norm_mean", float("nan"))
-        pct = 100 * (d - base_norm) / base_norm if base_norm else float("nan")
-        lines.append(f"{name:16s} {d:10.3f} {pct:+7.1f} {a.get('dtwp_mean', float('nan')):9.2f} "
-                     f"{a.get('length_ratio_mean', float('nan')):10.2f} "
-                     f"{a.get('length_abs_err_mean', float('nan')):9.1f}")
+        d = a.get("dtwp_matched_mean", float("nan"))
+        pct = 100 * (d - base_m) / base_m if base_m else float("nan")
+        lines.append(f"{name:16s} {d:10.2f} {pct:+7.1f} {a.get('dtwp_norm_mean', float('nan')):9.3f} "
+                     f"{a.get('dtwp_mean', float('nan')):9.2f} "
+                     f"{a.get('length_ratio_mean', float('nan')):10.2f}")
     text = "\n".join(lines)
     print(text)
     summary = {name: res["agg"] for name, res in results.items()}

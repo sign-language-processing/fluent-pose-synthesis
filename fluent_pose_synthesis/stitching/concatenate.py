@@ -49,6 +49,30 @@ class StitchConfig:
     padding: float = 0.20  # seconds of interpolated transition between signs
     savgol: bool = True  # Savitzky-Golay temporal smoothing at the end
 
+    # --- Techniques below (default off => baseline behaviour) ---------------
+    # Transition between signs: "pad" (baseline) | "velocity" | "direct".
+    transition: str = "pad"
+    transition_min: int = 2          # min bridge frames (velocity/direct)
+    transition_max: int = 16         # max bridge frames
+    transition_speed: float = 1.0    # divides the velocity-matched bridge length
+
+    # Butterworth low-pass temporal filter (Sign Stitching, BMVC 2024).
+    butter: bool = False
+    butter_cutoff: float = 6.0       # Hz
+    butter_order: int = 4
+
+    # Distribution alignment: learned constant shift of hand keypoints (x,y,z)
+    # in shoulder-normalized space, to match the corpus hand-position mean.
+    hand_shift: Optional[tuple] = None
+
+    # Hand root/shape decomposition: bridge the wrist (root) directly while
+    # holding handshape, minimizing spurious inter-sign hand movement.
+    detach_hands: bool = False
+
+    # Co-articulation: pull each sign spatially toward where the previous sign
+    # ended, reducing inter-sign wrist travel (0 = off, 1 = fully connected).
+    coarticulate: float = 0.0
+
 
 BASELINE = StitchConfig()
 
@@ -142,6 +166,118 @@ def _pose_savgol_filter(pose: Pose) -> Pose:
     return pose
 
 
+def _butter_filter(pose: Pose, cutoff: float, order: int) -> Pose:
+    """4th-order (default) low-pass Butterworth over time, per keypoint.
+
+    Removes high-frequency jitter/seams while preserving sign motion
+    (Sign Stitching, Walsh et al. BMVC 2024). Face is left untouched.
+    """
+    import scipy.signal
+
+    fps = pose.body.fps
+    nyq = fps / 2.0
+    wn = min(max(cutoff / nyq, 1e-3), 0.99)
+    b, a = scipy.signal.butter(order, wn, btype="low")
+
+    face_range = set()
+    for c in pose.header.components:
+        if c.name == "FACE_LANDMARKS":
+            base = pose.header._get_point_index("FACE_LANDMARKS", c.points[0])
+            face_range = set(range(base, base + len(c.points)))
+    n, _, points, dims = pose.body.data.shape
+    padlen = 3 * max(len(a), len(b))
+    if n <= padlen:
+        return pose
+    for p in range(points):
+        if p in face_range:
+            continue
+        for d in range(dims):
+            pose.body.data[:, 0, p, d] = scipy.signal.filtfilt(b, a, pose.body.data[:, 0, p, d])
+    return pose
+
+
+def _hand_indices(pose: Pose) -> list[int]:
+    idx, offset = [], 0
+    for c in pose.header.components:
+        if c.name in ("LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"):
+            idx.extend(range(offset, offset + len(c.points)))
+        offset += len(c.points)
+    return idx
+
+
+def _shoulder_width(pose: Pose) -> float:
+    try:
+        li = pose.header._get_point_index("POSE_LANDMARKS", "LEFT_SHOULDER")
+        ri = pose.header._get_point_index("POSE_LANDMARKS", "RIGHT_SHOULDER")
+    except Exception:
+        return 1.0
+    d = np.ma.getdata(pose.body.data)
+    w = np.nanmean(np.linalg.norm(d[:, 0, li, :] - d[:, 0, ri, :], axis=-1))
+    return float(w) if w and np.isfinite(w) else 1.0
+
+
+def _apply_hand_shift(pose: Pose, shift) -> Pose:
+    """Add (dx,dy,dz) — given in shoulder-normalized units — to every hand
+    keypoint, converted into the pose's current scale (distribution match)."""
+    idx = _hand_indices(pose)
+    if not idx:
+        return pose
+    scale = _shoulder_width(pose)
+    for d, s in enumerate(shift):
+        if s:
+            pose.body.data[:, 0, idx, d] = pose.body.data[:, 0, idx, d] + s * scale
+    return pose
+
+
+def _wrist_indices(pose: Pose):
+    try:
+        return (pose.header._get_point_index("POSE_LANDMARKS", "LEFT_WRIST"),
+                pose.header._get_point_index("POSE_LANDMARKS", "RIGHT_WRIST"))
+    except Exception:
+        return None
+
+
+def _boundary_velocity(pose: Pose, wi, ri, at_end: bool, k: int = 5) -> float:
+    data = np.ma.getdata(pose.body.data)
+    n = data.shape[0]
+    if n < 2:
+        return 0.0
+    seg = data[max(0, n - k):] if at_end else data[:min(n, k)]
+    w = seg[:, 0, [wi, ri], :]
+    if w.shape[0] < 2:
+        return 0.0
+    return float(np.nanmean(np.linalg.norm(np.diff(w, axis=0), axis=-1)))
+
+
+def _bridge_frames(end_frame: np.ndarray, start_frame: np.ndarray, n: int):
+    """n interpolated frames strictly between two boundary frames (linear)."""
+    if n <= 0:
+        return None
+    ts = np.linspace(0, 1, n + 2)[1:-1]  # exclude endpoints
+    return np.stack([end_frame * (1 - t) + start_frame * t for t in ts])
+
+
+def _coarticulate(poses: list[Pose], strength: float) -> None:
+    """Translate each sign (all keypoints) toward where the previous ended,
+    cutting the spurious 'return to neutral' travel between citation forms.
+
+    Operates in place on already-trimmed poses.  strength=0 is a no-op; 1 makes
+    consecutive dominant-hand wrists coincide across the join.
+    """
+    wr = _wrist_indices(poses[0])
+    if wr is None or strength <= 0:
+        return
+    wi, ri = wr
+    offset = np.zeros(poses[0].body.data.shape[-1])
+    for i in range(1, len(poses)):
+        prev = np.ma.getdata(poses[i - 1].body.data)
+        cur = np.ma.getdata(poses[i].body.data)
+        prev_end = prev[-1, 0, ri, :]
+        cur_start = cur[0, 0, ri, :] + offset
+        offset = offset + strength * (prev_end - cur_start)
+        poses[i].body.data = poses[i].body.data + offset
+
+
 def _create_padding(seconds: float, example: Pose) -> NumPyPoseBody:
     fps = example.body.fps
     frames = int(seconds * fps)
@@ -165,10 +301,8 @@ def _find_best_connection_point(pose1: Pose, pose2: Pose, window: float):
     return len(pose1.body.data) - p1 + idx[0], idx[1]
 
 
-def _smooth_concatenate(poses: list[Pose], config: StitchConfig) -> Pose:
-    if len(poses) == 1:
-        return poses[0]
-
+def _apply_connection_search(poses: list[Pose], config: StitchConfig) -> None:
+    """Trim each pose in place to the frames that join most closely."""
     start = 0
     for i, pose in enumerate(poses):
         if i != len(poses) - 1 and config.connection_search:
@@ -180,17 +314,72 @@ def _smooth_concatenate(poses: list[Pose], config: StitchConfig) -> Pose:
         pose.body = pose.body[start:end]
         start = next_start
 
+
+def _finish(body: NumPyPoseBody, header, config: StitchConfig) -> Pose:
+    pose = Pose(header=header, body=body)
+    if config.savgol:
+        pose = _pose_savgol_filter(pose)
+    if config.butter:
+        pose = _butter_filter(pose, config.butter_cutoff, config.butter_order)
+    return pose
+
+
+def _smooth_concatenate(poses: list[Pose], config: StitchConfig, connection_done: bool = False) -> Pose:
+    if len(poses) == 1:
+        return _finish(poses[0].body, poses[0].header, config) if (config.savgol or config.butter) else poses[0]
+
+    if not connection_done:
+        _apply_connection_search(poses, config)
+
+    if config.transition in ("velocity", "direct"):
+        return _bridge_concatenate(poses, config)
+
+    # Baseline "pad" transition: zero-padding + linear interpolation.
     padding = _create_padding(config.padding, poses[0])
     for pose in poses[:-1]:
         pose.body.data = np.concatenate((pose.body.data, padding.data))
         pose.body.confidence = np.concatenate((pose.body.confidence, padding.confidence))
-
     new_data = np.concatenate([p.body.data for p in poses])
     new_conf = np.concatenate([p.body.confidence for p in poses])
     body = NumPyPoseBody(fps=poses[0].body.fps, data=new_data, confidence=new_conf)
     body = body.interpolate(kind="linear")
-    pose = Pose(header=poses[0].header, body=body)
-    return _pose_savgol_filter(pose) if config.savgol else pose
+    return _finish(body, poses[0].header, config)
+
+
+def _bridge_concatenate(poses: list[Pose], config: StitchConfig) -> Pose:
+    """Insert an adaptive number of interpolated frames between signs.
+
+    "direct":   a fixed small bridge (transition_min frames).
+    "velocity": bridge length ∝ wrist gap / boundary velocity, so the transition
+                moves at the signs' own speed instead of a fixed duration.
+    """
+    wr = _wrist_indices(poses[0])
+    fps = poses[0].body.fps
+    segs_data, segs_conf = [], []
+    for i, pose in enumerate(poses):
+        segs_data.append(np.ma.getdata(pose.body.data))
+        segs_conf.append(pose.body.confidence)
+        if i == len(poses) - 1:
+            break
+        end_f = np.ma.getdata(poses[i].body.data)[-1]
+        start_f = np.ma.getdata(poses[i + 1].body.data)[0]
+        if config.transition == "direct" or wr is None:
+            n = config.transition_min
+        else:
+            wi, ri = wr
+            gap = float(np.nanmean(np.linalg.norm(end_f[0, [wi, ri], :] - start_f[0, [wi, ri], :], axis=-1)))
+            v = 0.5 * (_boundary_velocity(poses[i], wi, ri, at_end=True)
+                       + _boundary_velocity(poses[i + 1], wi, ri, at_end=False))
+            n = int(round(gap / v / config.transition_speed)) if v > 1e-6 else config.transition_min
+            n = max(config.transition_min, min(config.transition_max, n))
+        bridge = _bridge_frames(end_f, start_f, n)
+        if bridge is not None:
+            segs_data.append(bridge)
+            segs_conf.append(np.ones((bridge.shape[0], *segs_conf[-1].shape[1:])))
+    data = np.ma.array(np.concatenate(segs_data))
+    conf = np.concatenate(segs_conf)
+    body = NumPyPoseBody(fps=fps, data=data, confidence=conf)
+    return _finish(body, poses[0].header, config)
 
 
 # --------------------------------------------------------------------------
@@ -213,8 +402,14 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
         ]
     if config.frames_per_sign is not None or config.max_sign_frames is not None or config.speed != 1.0:
         poses = [apply_tempo(p, config) for p in poses]
+    coart = config.coarticulate > 0
+    if coart:
+        _apply_connection_search(poses, config)
+        _coarticulate(poses, config.coarticulate)
 
-    pose = _smooth_concatenate(poses, config)
+    pose = _smooth_concatenate(poses, config, connection_done=coart)
     pose = correct_wrists(pose)
     normalize_pose_size(pose)
+    if config.hand_shift is not None:
+        pose = _apply_hand_shift(pose, config.hand_shift)
     return pose

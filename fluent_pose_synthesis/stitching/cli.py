@@ -59,7 +59,7 @@ def main() -> None:
     s = sub.add_parser("stitch", help="stitch DGS-Types forms (or .pose files) into a sentence")
     s.add_argument("--glosses", nargs="+", required=True, help="gloss names or .pose paths, in order")
     s.add_argument("--out", default="stitched.pose")
-    s.add_argument("--config", default="seg_pad00", choices=list(CONFIGS))
+    s.add_argument("--config", default="fluent", choices=list(CONFIGS))
     s.set_defaults(func=_cmd_stitch)
 
     e = sub.add_parser("evaluate", help="evaluate a config against the DGS corpus")

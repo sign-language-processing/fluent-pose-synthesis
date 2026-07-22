@@ -1,0 +1,83 @@
+label	hypothesis	dtwp_clean_mean	dtwp_matched_mean	dtwp_mean	length_ratio_mean	vel_w_mean	acc_w_mean	pos_std_err_mean	vel_mean_err_mean	still_frac_mean
+anchor_seg_pad00	seg trim + no padding (loop anchor)	0.3154	46.6717	50.4055	1.4131	0.0247	0.0123	0.1210	0.0116	nan
+baseline_s2s	spoken-to-signed baseline for reference	0.3042	47.6736	58.3745	2.5183	0.0139	0.0061	0.1157	0.0104	nan
+yshift_-0.10	H: raise hands 0.10 toward ref y-mean	0.3121	46.6377	50.3628	1.4131	0.0247	0.0123	0.1210	0.0116	nan
+yshift_-0.157	H: raise hands by measured y-offset 0.157	0.3121	46.6380	50.3637	1.4131	0.0247	0.0123	0.1210	0.0116	nan
+yshift_-0.25	H: raise hands 0.25 (overshoot test)	0.3194	46.6713	50.4059	1.4131	0.0247	0.0123	0.1210	0.0116	nan
+trim_motion0.20	H: motion-threshold crop (alpha 0.2) vs seg	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	nan
+trim_handraise	H: hand-raise trim + no pad (baseline trim)	0.3102	46.8765	55.8600	2.1475	0.0188	0.0079	0.1233	0.0110	nan
+seg_butter10	H: light LP 10Hz reduces seam jitter (vel dist)	0.3146	46.5753	50.2794	1.4131	0.0222	0.0090	0.1209	0.0092	nan
+coart_0.15	H: pull signs together spatially to cut inter-sign travel	0.3156	47.0618	50.9027	1.4077	0.0240	0.0119	0.1198	0.0119	0.3804
+coart_0.3	H: pull signs together spatially to cut inter-sign travel	0.3148	47.0694	50.9111	1.4077	0.0234	0.0116	0.1198	0.0119	0.3795
+coart_0.5	H: pull signs together spatially to cut inter-sign travel	0.3205	47.1109	51.6161	1.4077	0.0227	0.0113	0.1215	0.0118	0.3775
+coart_0.75	H: pull signs together spatially to cut inter-sign travel	0.3289	47.2101	51.8195	1.4077	0.0221	0.0110	0.1274	0.0118	0.3775
+coart_1.0	H: pull signs together spatially to cut inter-sign travel	0.3418	47.3455	52.2737	1.4077	0.0220	0.0110	0.1365	0.0117	0.3754
+butter_4	H: LP filter matches ref velocity smoothness	0.3131	50.2738	58.4891	1.4131	0.0158	0.0039	0.1194	0.0076	0.2571
+butter_6	H: LP filter matches ref velocity smoothness	0.3135	47.8847	53.9537	1.4131	0.0191	0.0050	0.1203	0.0081	0.2789
+butter_8	H: LP filter matches ref velocity smoothness	0.3139	46.5771	50.7745	1.4131	0.0210	0.0069	0.1207	0.0085	0.2979
+butter_10	H: LP filter matches ref velocity smoothness	0.3146	46.5753	50.2794	1.4131	0.0222	0.0090	0.1209	0.0092	0.3229
+butter_12	H: LP filter matches ref velocity smoothness	0.3143	46.5593	49.4565	1.4131	0.0225	0.0101	0.1210	0.0092	0.3209
+butter_14	H: LP filter matches ref velocity smoothness	0.3150	46.5612	49.4591	1.4131	0.0228	0.0110	0.1210	0.0098	0.3358
+butter_18	H: LP filter matches ref velocity smoothness	0.3149	46.5982	49.4612	1.4131	0.0229	0.0116	0.1210	0.0100	0.3401
+vel_max3	H: velocity-matched bridge, capped length	0.3109	53.3264	59.5773	1.5170	0.0265	0.0130	0.1082	0.0119	0.3851
+vel_max5	H: velocity-matched bridge, capped length	0.3078	52.3249	59.6199	1.5873	0.0236	0.0106	0.1062	0.0111	0.3678
+vel_max8	H: velocity-matched bridge, capped length	0.3063	51.5132	59.6875	1.6887	0.0203	0.0094	0.1035	0.0098	0.3490
+direct_2	H: fixed short bridge	0.3118	53.3431	59.5383	1.4807	0.0283	0.0157	0.1092	0.0123	0.3950
+direct_3	H: fixed short bridge	0.3109	53.3376	59.5774	1.5171	0.0265	0.0130	0.1082	0.0119	0.3851
+direct_4	H: fixed short bridge	0.3102	53.2456	59.6195	1.5536	0.0250	0.0115	0.1071	0.0117	0.3758
+fps_12	H: resample each sign to fixed length	0.2718	48.1433	42.5660	0.3898	0.0874	0.0535	0.0926	0.0469	0.1873
+fps_15	H: resample each sign to fixed length	0.2765	47.3440	44.0921	0.4859	0.0728	0.0429	0.0957	0.0282	0.2341
+fps_18	H: resample each sign to fixed length	0.2755	48.4026	46.0980	0.5879	0.0601	0.0348	0.0971	0.0145	0.2797
+fps_20	H: resample each sign to fixed length	0.2735	48.3107	46.7690	0.6786	0.0519	0.0300	0.0985	0.0118	0.3177
+fps_25	H: resample each sign to fixed length	0.2772	47.6006	46.9045	0.8259	0.0449	0.0242	0.0992	0.0129	0.3693
+cap_18	H: cap only over-long signs	0.2871	49.0697	45.9223	0.4957	0.0706	0.0394	0.1031	0.0305	0.1973
+cap_22	H: cap only over-long signs	0.2899	49.4726	47.4282	0.5923	0.0594	0.0334	0.1055	0.0216	0.2442
+cap_25	H: cap only over-long signs	0.2910	48.1951	46.4789	0.6593	0.0539	0.0279	0.1056	0.0179	0.2636
+cap_30	H: cap only over-long signs	0.2931	50.1047	48.9439	0.7798	0.0455	0.0241	0.1074	0.0143	0.2976
+cap_35	H: cap only over-long signs	0.2974	52.2886	52.1863	0.8612	0.0419	0.0205	0.1087	0.0127	0.3174
+motion_0.1	H: motion-threshold crop tightness	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	0.3832
+motion_0.15	H: motion-threshold crop tightness	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	0.3832
+motion_0.2	H: motion-threshold crop tightness	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	0.3832
+motion_0.25	H: motion-threshold crop tightness	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	0.3832
+motion_0.3	H: motion-threshold crop tightness	0.3109	47.5629	56.5382	2.1125	0.0194	0.0081	0.1213	0.0120	0.3832
+yshift_-0.05	H: raise hands toward ref y-distribution	0.3124	46.6477	50.3762	1.4131	0.0247	0.0123	0.1210	0.0116	0.3802
+yshift_-0.1	H: raise hands toward ref y-distribution	0.3121	46.6377	50.3628	1.4131	0.0247	0.0123	0.1210	0.0116	0.3802
+yshift_-0.15	H: raise hands toward ref y-distribution	0.3118	46.6373	50.3626	1.4131	0.0247	0.0123	0.1210	0.0116	0.3802
+yshift_-0.2	H: raise hands toward ref y-distribution	0.3155	46.6480	50.3768	1.4131	0.0247	0.0123	0.1210	0.0116	0.3802
+combo_coart_butter	H: coart 0.5 + LP 10	0.3202	47.0141	51.4898	1.4077	0.0203	0.0082	0.1213	0.0096	0.3262
+combo_coart_cap	H: coart 0.5 + cap 30	0.2973	50.5620	49.7160	0.7729	0.0415	0.0219	0.1058	0.0138	0.2880
+combo_butter_cap	H: LP 10 + cap 25	0.2917	48.1953	46.4761	0.6593	0.0508	0.0248	0.1050	0.0235	0.1573
+combo_all	H: coart 0.5 + LP 10 + cap 30 + yshift	0.2959	50.5092	49.7572	0.7729	0.0377	0.0177	0.1054	0.0152	0.1944
+combo_butter_yshift	H: LP 10 + yshift	0.3118	46.5396	50.2354	1.4131	0.0222	0.0090	0.1209	0.0092	0.3229
+combo_coart_butter_cap25	H: coart 0.5 + LP 10 + cap 25	0.2940	48.9048	47.5634	0.6541	0.0460	0.0222	0.1039	0.0212	0.1598
+base_butter_6	H: does LP help the plain baseline velocity dist too?	0.3032	47.6953	61.8669	2.5183	0.0127	0.0052	0.1155	0.0099	0.3332
+base_butter_8	H: does LP help the plain baseline velocity dist too?	0.3034	47.8035	58.7505	2.5183	0.0131	0.0052	0.1156	0.0100	0.3326
+base_butter_10	H: does LP help the plain baseline velocity dist too?	0.3035	47.6745	58.2567	2.5183	0.0134	0.0053	0.1157	0.0102	0.3338
+seg_butter_5	H: fine LP cutoff for velocity-dist match	0.3128	49.1221	57.0427	1.4131	0.0177	0.0044	0.1200	0.0079	0.2726
+seg_butter_7	H: fine LP cutoff for velocity-dist match	0.3141	46.6839	53.2275	1.4131	0.0203	0.0061	0.1205	0.0085	0.2940
+seg_butter_9	H: fine LP cutoff for velocity-dist match	0.3142	46.4834	50.7879	1.4131	0.0217	0.0081	0.1208	0.0088	0.3119
+seg_butter_11	H: fine LP cutoff for velocity-dist match	0.3144	46.5760	49.8748	1.4131	0.0224	0.0095	0.1209	0.0091	0.3202
+seg_butter_13	H: fine LP cutoff for velocity-dist match	0.3149	46.5604	49.4578	1.4131	0.0226	0.0106	0.1210	0.0095	0.3267
+coart0.2_butter8	H: coart + LP joint effect	0.3143	46.9649	51.2888	1.4077	0.0201	0.0066	0.1194	0.0088	0.3008
+coart0.2_butter10	H: coart + LP joint effect	0.3145	46.9645	50.7758	1.4077	0.0213	0.0086	0.1196	0.0095	0.3232
+coart0.4_butter8	H: coart + LP joint effect	0.3169	46.9899	52.2838	1.4077	0.0194	0.0065	0.1200	0.0088	0.3025
+coart0.4_butter10	H: coart + LP joint effect	0.3170	46.9885	50.8017	1.4077	0.0205	0.0083	0.1202	0.0096	0.3258
+coart0.6_butter8	H: coart + LP joint effect	0.3219	47.0507	52.4432	1.4077	0.0189	0.0064	0.1230	0.0088	0.3041
+coart0.6_butter10	H: coart + LP joint effect	0.3226	47.0490	51.5255	1.4077	0.0200	0.0081	0.1233	0.0096	0.3261
+seg_speed1.1_b10	H: mild speedup raises median velocity toward ref	0.3148	56.2145	60.3025	1.2660	0.0279	0.0125	0.1149	0.0094	0.3010
+seg_speed1.2_b10	H: mild speedup raises median velocity toward ref	0.3134	55.6121	58.1988	1.1349	0.0301	0.0132	0.1170	0.0100	0.2709
+seg_speed1.3_b10	H: mild speedup raises median velocity toward ref	0.3150	54.8068	56.5589	1.0467	0.0327	0.0145	0.1168	0.0107	0.2512
+fps16_b10	H: per-sign resample to natural length + LP	0.2721	48.4336	45.3284	0.5340	0.0636	0.0337	0.0951	0.0335	0.1073
+fps17_b10	H: per-sign resample to natural length + LP	0.2763	47.9797	45.2492	0.5408	0.0607	0.0322	0.0959	0.0302	0.1168
+fps18_b10	H: per-sign resample to natural length + LP	0.2755	48.7577	46.9634	0.5879	0.0564	0.0301	0.0964	0.0252	0.1351
+fps19_b10	H: per-sign resample to natural length + LP	0.2725	47.6942	46.1832	0.6355	0.0527	0.0281	0.0966	0.0220	0.1608
+fps20_b10	H: per-sign resample to natural length + LP	0.2728	48.5117	46.8191	0.6786	0.0480	0.0255	0.0979	0.0175	0.1771
+cap28_b10	H: cap over-long signs + LP	0.2939	49.1505	48.6244	0.7267	0.0451	0.0223	0.1041	0.0184	0.1734
+cap32_b10	H: cap over-long signs + LP	0.2948	51.7322	50.6630	0.8052	0.0407	0.0194	0.1061	0.0167	0.1970
+cap36_b10	H: cap over-long signs + LP	0.2974	51.0984	51.5019	0.8853	0.0376	0.0171	0.1073	0.0132	0.2214
+cap40_b10	H: cap over-long signs + LP	0.3000	52.1104	52.7504	0.9520	0.0339	0.0151	0.1108	0.0115	0.2420
+vel4_b10	H: velocity bridge + LP	0.3103	53.8064	59.8971	1.5524	0.0230	0.0077	0.1070	0.0106	0.3463
+vel6_b10	H: velocity bridge + LP	0.3068	52.8128	59.9397	1.6221	0.0205	0.0061	0.1051	0.0100	0.3337
+final_seg_b10_yshift	H: seg + LP10 + raise hands	0.3118	46.5396	50.2354	1.4131	0.0222	0.0090	0.1209	0.0092	0.3229
+final_seg_b8_cap34	H: seg + LP8 + gentle cap for length	0.2949	51.9031	51.9963	0.8350	0.0372	0.0137	0.1057	0.0161	0.1810
+final_seg_b8_coart0.3	H: seg + LP8 + light coart	0.3145	46.9732	51.6995	1.4077	0.0197	0.0066	0.1195	0.0088	0.3008

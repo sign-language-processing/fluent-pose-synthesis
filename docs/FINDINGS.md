@@ -86,3 +86,73 @@ coarticulation that makes fluent signing both short and well-formed.
 halves the over-length with the least shape cost of the natural-length configs,
 and degrades gracefully to the hand-raise heuristic when the segmentation model
 is unavailable. Use `cap_25` when tight tempo matching matters more than shape.
+
+---
+
+# Part 2 — Deep study: can we actually move DTWp? (100+ iterations)
+
+A second round targeted DTWp *itself* (the hard metric), diagnosing error
+sources statistically and testing >100 configurations (`docs/iteration_results.tsv`),
+drawing on **Sign Stitching** (Walsh et al., BMVC 2024) and the "detach the
+hands / minimize inter-sign movement" idea.
+
+## Better metrics for a fair fight
+
+Every DTW-family score has a bias, so we track three plus distribution stats:
+
+* `dtwp` — pose-evaluation DTWp as-is (cumulative → favors *short*).
+* `dtwp_matched` — DTWp after resampling the hypothesis to the reference length
+  (isolates shape; the main objective).
+* `dtwp_clean` — path-normalized joint-hand DTW with masked keypoints
+  *interpolated* instead of filled with 10.0 (artifact-free; but favors *smooth*).
+* `vel_w`, `still_frac`, position offsets — mask-aware **distribution** metrics
+  (velocity/hold/position), the most trustworthy quality signal.
+
+## Diagnosis — where the DTWp error actually is
+
+* **~half of raw DTWp is a metric artifact.** pose-evaluation fills undetected
+  keypoints with 10.0; the reference has ~2 % masked hand frames (a resting hand),
+  and each becomes a ~10-unit spike. The reference's apparent huge spread
+  (velocity mean 0.40, position std 1.4) is entirely these fills — mask-aware,
+  the medians nearly match (hyp 0.017, ref 0.026).
+* **Position dominates over handshape**: wrist-trajectory DTW (28.9) ≈ finger DTW
+  (30.2); since finger coords are absolute, most of the distance is *where the
+  hand is*, not its configuration.
+* **Depth (z) is uninformative** — both signals have z-std ≈ 0.001 after
+  normalization (MediaPipe depth); the earlier "z problem" was the 10.0 fill.
+* **Real, fixable distribution gaps**: the stitch is jitterier (velocity std
+  0.072 vs 0.025), holds too much (still-frac 0.37 vs 0.14), and sits ~0.16 lower
+  in *y* than the reference.
+
+## Techniques tested (each measured vs. the seg anchor)
+
+Segmentation-trim + no-padding (`seg_pad00`, dtwp_matched **46.7**, len 1.41) is
+the anchor. Over 100+ configs:
+
+| technique | effect on dtwp_matched | effect on distribution |
+|---|---|---|
+| Butterworth low-pass (Sign Stitching) | 9 Hz: **46.5** (best); 4 Hz: worse | **velW −12–36 %**, fewer holds |
+| velocity-matched / direct transitions | worse (adds length) | slightly smoother |
+| co-articulation (detach & pull signs together) | neutral→worse | mild velW help |
+| per-sign resample / duration cap | worse (distorts shape) | matches length & hold-fraction |
+| hand y-shift (distribution align) | −0.1 % (negligible) | small position match |
+| motion-threshold crop | ≈ hand-raise | — |
+
+## Conclusion of the deep study
+
+**DTWp shape has a hard floor at ~the segmentation-trim config — no stitching
+geometry beat it by more than ~0.4 % across 100+ tries**, on two disjoint
+samples. Raw-DTW "wins" are always length or smoothness artifacts. This is
+strong evidence that the citation-vs-fluent gap (coarticulation, movement
+reduction) is **not recoverable by concatenation-level tricks** — it needs a
+learned model. What stitching *can* robustly deliver:
+
+1. **Segmentation trimming** — lower dtwp_matched and ~half the length vs. the
+   spoken-to-signed baseline (both seeds).
+2. **Butterworth low-pass (~9 Hz)** — smoother, more natural velocity
+   distribution and fewer spurious holds, at **zero** dtwp cost.
+
+**Recommended default (`fluent` preset): segmentation trim + Butterworth 9 Hz.**
+Held-out seed 1: dtwp_matched 50.6 (baseline) → 49.1 (−3 %), length 2.50 → 1.53,
+velW 0.024 → 0.022. `fluent_short` adds a duration cap for ~natural length when
+tempo fidelity outweighs shape.
