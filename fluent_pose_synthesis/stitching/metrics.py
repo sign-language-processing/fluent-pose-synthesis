@@ -207,6 +207,18 @@ def hand_accel_series(pose: Pose) -> np.ndarray:
     return np.abs(np.diff(v)) if len(v) >= 2 else np.zeros(0)
 
 
+def hand_jerk_series(pose: Pose) -> np.ndarray:
+    a = hand_accel_series(pose)
+    return np.abs(np.diff(a)) if len(a) >= 2 else np.zeros(0)
+
+
+def hand_position_axis(pose: Pose, axis: int) -> np.ndarray:
+    """Flattened, mask-filtered hand-keypoint positions on one axis."""
+    h = _hands_masked(pose)[:, :, axis]
+    arr = np.ma.filled(h.reshape(-1), np.nan)
+    return arr[np.isfinite(arr)]
+
+
 def distribution_distance(hypothesis: Pose, reference: Pose) -> dict:
     """How far the hypothesis's motion/position *distributions* are from the
     reference's — complements DTWp (which only scores aligned trajectories).
@@ -217,11 +229,18 @@ def distribution_distance(hypothesis: Pose, reference: Pose) -> dict:
     """
     from scipy.stats import wasserstein_distance
 
+    def w(a, b):
+        return float(wasserstein_distance(a, b)) if len(a) and len(b) else float("nan")
+
     out = {}
     hv, rv = hand_velocity_series(hypothesis), hand_velocity_series(reference)
     ha, ra = hand_accel_series(hypothesis), hand_accel_series(reference)
-    out["vel_w"] = float(wasserstein_distance(hv, rv)) if len(hv) and len(rv) else float("nan")
-    out["acc_w"] = float(wasserstein_distance(ha, ra)) if len(ha) and len(ra) else float("nan")
+    hj, rj = hand_jerk_series(hypothesis), hand_jerk_series(reference)
+    out["vel_w"] = w(hv, rv)
+    out["acc_w"] = w(ha, ra)
+    out["jerk_w"] = w(hj, rj)
+    out["posx_w"] = w(hand_position_axis(hypothesis, 0), hand_position_axis(reference, 0))
+    out["posy_w"] = w(hand_position_axis(hypothesis, 1), hand_position_axis(reference, 1))
     hp = _hands_masked(hypothesis).reshape(-1, 3)
     rp = _hands_masked(reference).reshape(-1, 3)
     hp_std = np.ma.std(hp, axis=0).mean()
@@ -275,8 +294,8 @@ def aggregate(rows: list[dict]) -> dict:
     """Mean/median summary over per-sentence metric rows."""
     out = {}
     keys = ["dtwp", "dtwp_norm", "dtwp_matched", "dtwp_clean", "length_ratio", "length_abs_err",
-            "hyp_frames", "ref_frames", "vel_w", "acc_w", "pos_std_err", "vel_mean_err",
-            "still_frac", "still_frac_err"]
+            "hyp_frames", "ref_frames", "vel_w", "acc_w", "jerk_w", "posx_w", "posy_w",
+            "pos_std_err", "vel_mean_err", "still_frac", "still_frac_err", "emb_cos"]
     for k in keys:
         vals = np.array([r[k] for r in rows if r is not None and np.isfinite(r.get(k, np.nan))])
         if len(vals):

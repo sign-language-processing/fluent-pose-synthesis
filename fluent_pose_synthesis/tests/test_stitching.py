@@ -78,3 +78,14 @@ def test_fluent_preset_exists():
     assert "fluent" in CONFIGS
     assert CONFIGS["fluent"].trim_method == "segmentation"
     assert CONFIGS["fluent"].butter
+
+
+def test_copy_pose_is_independent():
+    # Guards the cache-mutation bug: in-place steps must not touch the original.
+    from fluent_pose_synthesis.stitching.concatenate import _copy_pose
+
+    pose = _make_pose(20)
+    original = np.ma.getdata(pose.body.data).copy()
+    dup = _copy_pose(pose)
+    dup.body.data[:] = dup.body.data + 5.0
+    assert np.allclose(np.ma.getdata(pose.body.data), original)

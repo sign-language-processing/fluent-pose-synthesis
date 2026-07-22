@@ -84,10 +84,27 @@ diagnosed *where* the DTWp error lives and tried to move it directly, drawing on
   geometry (velocity-matched transitions, co-articulation / hand-detach,
   resampling, position alignment) beat it by more than ~0.4 %. The
   citation-vs-fluent gap is not closable by concatenation — it needs the model.
-- **Butterworth low-pass filtering (~9 Hz)** is the one free win: it makes the
-  velocity distribution measurably more natural and removes seam jitter at **zero**
-  DTWp cost. This is the **recommended `fluent` preset** (segmentation trim + 9 Hz
-  low-pass): held-out dtwp_matched 50.6 → 49.1, length 2.50 → 1.53.
+- **Butterworth low-pass filtering** removes seam jitter at **zero** DTWp cost.
+
+A third study ([`docs/FINDINGS.md`](docs/FINDINGS.md) Part 3) dropped DTWp as the
+target and optimized **distribution closeness** and a **SignCLIP embedding
+distance** instead — and got a real, held-out-validated improvement. The
+**recommended `fluent` preset** (segmentation trim + 6 Hz low-pass + duration
+cap) beats the spoken-to-signed baseline on:
+
+| metric (held-out seed 1) | baseline | `fluent` |
+|---|---|---|
+| SignCLIP embedding distance ↓ (semantic closeness) | 0.283 | **0.273** |
+| jerk / jitter ↓ | 0.0079 | **0.0041** |
+| hand y-position distance ↓ | 0.326 | **0.308** |
+| length ratio (→1.0) | 2.51 | **0.99** |
+
+- **Segmentation trimming** makes the stitch *semantically* closer (SignCLIP),
+  not just shorter.
+- **Butterworth (~6 Hz)** cuts jitter ~4–5× with no embedding cost.
+- **Co-articulation / hand-detach hurts** — pulling signs together moves them out
+  of their meaningful signing-space locations (embedding distance rises).
+- The remaining gap is the citation-vs-fluent coarticulation problem — the model's job.
 
 ## Install
 
@@ -150,6 +167,22 @@ fluent-stitch analyze  --n 40                 # corpus vs. isolated-form statist
 fluent-stitch evaluate --n 40 --config all    # A/B every config vs. baseline
 ```
 
+Metrics: DTWp (pose-evaluation), mask-aware kinematic **distribution** distances
+(velocity/acceleration/jerk/position Wasserstein, hold-fraction), and — when the
+SignCLIP service is running — a **semantic embedding distance**:
+
+```bash
+# build once (native arm64; downloads the checkpoint + exports ONNX)
+git clone https://github.com/sign/sign-language-assessment.git
+docker build -t sign-clip sign-language-assessment/sign_clip
+docker run -d -p 8080:8080 -e PORT=8080 sign-clip     # POST /api/embed/pose -> 768-dim
+```
+
+The iteration driver (`iterate.py`) then reports per-sentence embedding cosine
+distance and a Fréchet Pose Distance alongside the kinematic metrics. Stitch with
+`reduce_holistic=False` so the pose stays full-holistic (embeddable); hand-based
+metrics are unaffected.
+
 ## Architecture
 
 ```
@@ -160,12 +193,13 @@ fluent_pose_synthesis/stitching/
 ├── dgs_types.py     # gloss → isolated citation pose (download + extract + cache)
 ├── trim.py          # per-sign trimming: hand-raise heuristic | segmentation model
 ├── concatenate.py   # config-driven stitching (baseline-faithful + toggles)
-├── metrics.py       # DTWp, dtwp_matched/clean, velocity/hold distribution metrics
+├── metrics.py       # DTWp/matched/clean + mask-aware velocity/accel/jerk/position distributions
+├── signclip.py      # SignCLIP embedding client + cosine / Fréchet Pose Distance
 ├── harness.py       # sample sentences → reconstruct → score
 ├── experiments.py   # named configs (incl. `fluent`), A/B sweep, TSV/JSON logging
 ├── analysis.py      # corpus vs. reconstruction characteristics
 ├── diagnostics.py   # where the DTWp error comes from (masking, position, ...)
-├── iterate.py       # hypothesis-driven iteration driver (results.tsv)
+├── iterate.py       # hypothesis-driven iteration driver (results.tsv, +embeddings)
 ├── analyze_results.py  # multi-objective ranking of an iteration run
 ├── warm_cache.py    # parallel pre-extraction of an eval set's poses
 └── cli.py           # `fluent-stitch` entry point

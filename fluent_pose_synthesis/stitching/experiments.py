@@ -51,12 +51,15 @@ CONFIGS: dict[str, StitchConfig] = {
     "seg_cap30": StitchConfig(trim_method="segmentation", max_sign_frames=30, padding=0.05),
     "seg_cap25": StitchConfig(trim_method="segmentation", max_sign_frames=25, padding=0.05),
     "seg_cap20": StitchConfig(trim_method="segmentation", max_sign_frames=20, padding=0.05),
-    # Recommended default: segmentation trim + Butterworth 9 Hz. Best dtwp on the
-    # DGS Corpus, halves over-length vs. baseline, and smooths seam jitter.
-    "fluent": StitchConfig(trim_method="segmentation", padding=0.0, butter=True, butter_cutoff=9.0),
-    # Tempo-matched variant (~natural length) at a small shape cost.
-    "fluent_short": StitchConfig(trim_method="segmentation", padding=0.0, butter=True,
-                                 butter_cutoff=9.0, max_sign_frames=40),
+    # Recommended default: segmentation trim + Butterworth 6 Hz low-pass +
+    # duration cap. Validated on held-out data to beat the spoken-to-signed
+    # baseline on SignCLIP embedding distance, jerk (smoothness), length, and
+    # hand position. reduce_holistic=False keeps the pose embeddable/full.
+    "fluent": StitchConfig(trim_method="segmentation", padding=0.0, reduce_holistic=False,
+                           butter=True, butter_cutoff=6.0, max_sign_frames=40),
+    # Keep the citation length (~1.5x) but still de-jittered and semantically closer.
+    "fluent_long": StitchConfig(trim_method="segmentation", padding=0.0, reduce_holistic=False,
+                                butter=True, butter_cutoff=7.0),
 }
 
 

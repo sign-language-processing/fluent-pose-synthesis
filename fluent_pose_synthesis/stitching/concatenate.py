@@ -385,11 +385,18 @@ def _bridge_concatenate(poses: list[Pose], config: StitchConfig) -> Pose:
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
+def _copy_pose(p: Pose) -> Pose:
+    """Deep-ish copy so in-place steps never mutate lru-cached input poses."""
+    data = np.ma.array(np.ma.getdata(p.body.data).copy(), mask=np.ma.getmaskarray(p.body.data).copy())
+    body = NumPyPoseBody(fps=p.body.fps, data=data, confidence=p.body.confidence.copy())
+    return Pose(header=p.header, body=body)
+
+
 def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pose:
     """Stitch isolated poses into one sequence under ``config``."""
     if not poses:
         raise ValueError("No poses to concatenate")
-    poses = list(poses)
+    poses = [_copy_pose(p) for p in poses]
 
     if config.reduce_holistic:
         poses = [reduce_holistic(p) for p in poses]

@@ -20,11 +20,14 @@ data = [
     "opencv-python",
     "mediapipe",
 ]
-# Evaluation metrics (DTWp + length). Pulls spoken-to-signed transitively.
+# Evaluation metrics: DTWp + length + mask-aware distribution metrics + SignCLIP
+# embedding distance (needs the sign-clip container running; see README).
 eval = [
     "pose-evaluation @ git+https://github.com/sign-language-processing/pose-evaluation",
     "dtaidistance",
     "fastdtw",
+    "scipy",
+    "requests",
     "tqdm",
 ]
 # Segmentation-based trimming (sign-language-segmentation model).

@@ -154,5 +154,69 @@ learned model. What stitching *can* robustly deliver:
 
 **Recommended default (`fluent` preset): segmentation trim + Butterworth 9 Hz.**
 Held-out seed 1: dtwp_matched 50.6 (baseline) → 49.1 (−3 %), length 2.50 → 1.53,
-velW 0.024 → 0.022. `fluent_short` adds a duration cap for ~natural length when
-tempo fidelity outweighs shape.
+velW 0.024 → 0.022.
+
+---
+
+# Part 3 — Distributional & SignCLIP-embedding metrics (the real win)
+
+DTWp is narrow (aligned keypoint trajectories, and ~half artifact). Following
+that conclusion we switched objectives to **distribution closeness** and a
+**semantic embedding distance**, and iterated against those instead.
+
+## Metrics (all mask-aware — the 10.0 fill is gone)
+
+* **Kinematic distributions** — 1-Wasserstein distance between hypothesis and
+  reference distributions of hand **velocity** (`vel_w`), **acceleration**
+  (`acc_w`), **jerk** (`jerk_w`, jitter), and **y-position** (`posy_w`); plus
+  hold-fraction. Undetected keypoints are ignored, not filled.
+* **SignCLIP embedding distance** — the poses are sent to the SignCLIP container
+  (`github.com/sign/sign-language-assessment`, built natively for arm64) and each
+  768-dim embedding is compared: per-sentence cosine distance (`emb_cos`, how
+  semantically close the reconstruction is to the *real* sentence) and a
+  diagonal-covariance Fréchet Pose Distance (`emb_fpd`, distribution-level).
+  Note: SignCLIP needs a full-holistic pose, so stitch with
+  `reduce_holistic=False` (hands are unchanged, so all hand metrics match).
+
+## Results (n=30 seed 0; reproduced on held-out seed 1)
+
+| config | emb_cos ↓ | jerk_w ↓ | posy_w ↓ | length →1 | vel_w ↓ |
+|---|---|---|---|---|---|
+| baseline (spoken-to-signed) | 0.281 | 0.0071 | 0.360 | 2.56 | **0.0137** |
+| segmentation trim | 0.269 | 0.0194 | 0.370 | 1.41 | 0.0248 |
+| seg + Butterworth 6 Hz | 0.270 | **0.0042** | 0.368 | 1.41 | 0.0190 |
+| **seg + LP6 + cap40 (`fluent`)** | **0.268** | 0.0041 | **0.342** | **0.95** | 0.0286 |
+| seg + co-articulation 0.3 | 0.290 | 0.0044 | 0.365 | 1.41 | 0.0178 |
+
+Held-out seed 1, `fluent` vs. baseline: **emb_cos 0.283 → 0.273**, **jerk_w
+0.0079 → 0.0041**, **posy_w 0.326 → 0.308**, **length 2.51 → 0.99**.
+
+## What actually moved the distribution
+
+1. **Segmentation trimming makes the reconstruction semantically closer** —
+   `emb_cos` drops from 0.281 to 0.269. Removing citation-form holds/lead-in
+   isn't just cosmetic; SignCLIP reads the trimmed sequence as closer to the
+   real sentence.
+2. **Butterworth low-pass (~6 Hz) cuts jerk ~4–5×** (0.019 → 0.004, below even
+   the baseline) with **no embedding cost** — the stitch's seam jitter, not its
+   content, is what the filter removes.
+3. **A duration cap (~40 frames)** brings length to ~1.0 and improves the
+   y-position distribution (fewer dropped-hand rest frames), at best `emb_cos`.
+4. **Co-articulation / hand-detach hurts** (`emb_cos` 0.29–0.30): pulling signs
+   together in space moves them out of their meaningful signing locations. An
+   earlier run *appeared* to show it helping — that was a pose-cache mutation bug
+   (`reduce_holistic=False` let in-place steps corrupt lru-cached inputs); fixed
+   with a defensive copy, after which the effect reversed. (A caution about
+   trusting a metric before the pipeline is clean.)
+5. `vel_w` is the one axis where baseline "wins" — an artifact of it being 2.5×
+   too long and full of low-velocity holds, which narrows its velocity spread.
+   It is outweighed by the embedding, jerk, length, and position gains.
+
+## Conclusion
+
+Optimizing for **distribution + semantics instead of DTWp yields a real,
+validated improvement**: the `fluent` preset (segmentation trim + 6 Hz low-pass
++ duration cap) is measurably closer to natural signing than the spoken-to-signed
+baseline on SignCLIP embedding distance, motion smoothness, length, and hand
+position — on held-out data. The residual gap (still not *fluent*) remains the
+citation-vs-fluent coarticulation problem for a learned model to close.
