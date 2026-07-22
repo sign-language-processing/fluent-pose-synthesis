@@ -53,9 +53,13 @@ compresses toward natural length — measurably closer to the real signing (righ
 in duration, smoothness, hand position, and SignCLIP embedding. The remaining gap
 (true coarticulation) is what a learned model would close.
 
-All three are rendered through the same [`stitching/visualize.py`](fluent_pose_synthesis/stitching/visualize.py):
-each source sign is **anonymized to one canonical signer** (pose-anonymization)
-so the sequence — and every tile — shows a single consistent body.
+All three are rendered through the same [`stitching/visualize.py`](fluent_pose_synthesis/stitching/visualize.py).
+Every source sign is **anonymized to one canonical signer** (pose-anonymization,
+applied *per sign* — a single post-stitch pass does not unify signers), so all
+tiles show one consistent body. The `fluent` stitch also **removes each sign's
+idle hand** (a one-handed sign's resting hand is dropped and interpolated from
+its neighbours) instead of freezing a hand off to the side — compare the naive
+tile, where resting hands snap in and out.
 
 ## What we found
 
@@ -155,7 +159,8 @@ stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", pad
 | field | default | effect |
 |---|---|---|
 | `reduce_holistic`, `normalize` | `True` | pre-processing |
-| `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) before stitching |
+| `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) *per source sign*, before stitching |
+| `drop_inactive_hands` | `False` | remove a hand that is idle for a sign so the stitcher interpolates it from active neighbours (smoother one-handed→two-handed transitions) |
 | `trim`, `trim_method` | `True`, `"hand_raise"` | per-sign lead-in/out trim; `"segmentation"` uses the model, falls back to `hand_raise` |
 | `padding` | `0.20` | seconds of interpolated transition between signs |
 | `speed` | `1.0` | uniform tempo compression (>1 = shorter) |

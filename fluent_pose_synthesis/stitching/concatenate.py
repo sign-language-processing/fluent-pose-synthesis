@@ -77,6 +77,11 @@ class StitchConfig:
     # ended, reducing inter-sign wrist travel (0 = off, 1 = fully connected).
     coarticulate: float = 0.0
 
+    # Remove a hand that is idle for a sign (resting/low/undetected) so stitching
+    # interpolates it from active neighbours instead of snapping to a rest pose.
+    drop_inactive_hands: bool = False
+    hand_active_min: float = 0.3  # min fraction of frames a hand must be "raised"
+
 
 BASELINE = StitchConfig()
 
@@ -403,6 +408,41 @@ def _anonymize(pose: Pose) -> Pose:
     return remove_appearance(pose)
 
 
+def _drop_inactive_hands(pose: Pose, active_min: float) -> Pose:
+    """Mask a hand that stays idle for this sign (undetected, or wrist not raised
+    above the elbow for at least ``active_min`` of frames). Removing it lets the
+    stitcher interpolate that hand from neighbouring signs instead of freezing a
+    resting hand into the sentence."""
+    data = pose.body.data
+    conf = pose.body.confidence
+    n = data.shape[0]
+    if n == 0:
+        return pose
+    hand_comps = {"LEFT": "LEFT_HAND_LANDMARKS", "RIGHT": "RIGHT_HAND_LANDMARKS"}
+    for side, comp in hand_comps.items():
+        try:
+            wi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_WRIST")
+            ei = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_ELBOW")
+        except Exception:
+            continue
+        detected = conf[:, 0, wi] > 0
+        raised = np.ma.getdata(data)[:, 0, wi, 1] < np.ma.getdata(data)[:, 0, ei, 1]
+        active_frac = float(np.mean(detected & raised))
+        if active_frac >= active_min:
+            continue
+        # Mask this hand's landmarks for the whole sign.
+        offset = 0
+        for c in pose.header.components:
+            if c.name == comp:
+                idx = list(range(offset, offset + len(c.points)))
+                if isinstance(data, np.ma.MaskedArray):
+                    data[:, 0, idx, :] = np.ma.masked
+                conf[:, 0, idx] = 0.0
+                break
+            offset += len(c.points)
+    return pose
+
+
 def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pose:
     """Stitch isolated poses into one sequence under ``config``."""
     if not poses:
@@ -413,6 +453,8 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
         # Constant appearance across signs; must precede reduce_holistic
         # (anonymization needs the full holistic layout).
         poses = [_anonymize(p) for p in poses]
+    if config.drop_inactive_hands:
+        poses = [_drop_inactive_hands(p, config.hand_active_min) for p in poses]
     if config.reduce_holistic:
         poses = [reduce_holistic(p) for p in poses]
     if config.normalize:

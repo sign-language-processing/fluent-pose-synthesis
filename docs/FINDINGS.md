@@ -250,3 +250,48 @@ signer) and isolates the genuine motion improvement.
 
 `anonymize=True` is now part of the `fluent` preset, and the README's three-tile
 comparison is rendered anonymized (one signer) via `stitching/visualize.py`.
+
+---
+
+# Part 5 — Idle-hand removal, per-sign anonymization, smoother transitions
+
+Feedback from the rendered example surfaced three issues, all now addressed.
+
+## Per-sign anonymization (bug fix)
+
+pose-anonymization's `transfer_appearance` reads the appearance from the **first
+frame only** and applies a single constant offset (and restores the hands
+unchanged). Applied to a *stitched* sequence — which mixes signers — it therefore
+does **not** unify appearance: signs from other signers keep their body shape.
+Anonymization must run **per source sign before stitching** (`anonymize=True`
+does this, pre-`reduce_holistic`). After the fix, every tile shows one consistent
+signer throughout.
+
+## Idle-hand removal (`drop_inactive_hands`)
+
+A one-handed sign leaves its non-dominant hand resting to the side (or undetected).
+Concatenated naively, that resting hand freezes into the sentence and snaps in/out
+at transitions. We now detect a hand that is "raised" (wrist above elbow, detected)
+for less than `hand_active_min` of a sign's frames and **mask it**, so the stitcher
+interpolates that hand from neighbouring signs (or leaves it absent).
+
+Effect (n=30 seed 0, anonymized both sides):
+
+| config | vel_w ↓ | jerk_w ↓ | posy_w ↓ | emb_cos ↓ | length |
+|---|---|---|---|---|---|
+| fluent (no drop) | 0.0289 | 0.0040 | 0.358 | **0.275** | 0.97 |
+| + drop idle hands | 0.0181 | 0.0036 | 0.352 | 0.282 | 0.95 |
+| **+ drop + 0.05 s transition** | **0.0170** | 0.0037 | 0.351 | 0.279 | 1.02 |
+
+Dropping the idle hand cuts the velocity-distribution distance **~40 %** (the
+resting-hand motion was pure noise) and a 0.05 s interpolated transition then
+recovers most of the small embedding cost while smoothing the joins. Trade-off:
+the *reference* keeps its own resting hand, so removing ours slightly worsens the
+position/embedding match on some samples — but transition smoothness (jerk) and
+the visual result clearly improve, which was the actual complaint.
+
+## Final `fluent` preset
+
+`anonymize` + `drop_inactive_hands` + segmentation trim + Butterworth 6 Hz +
+duration cap + 0.05 s transitions. Held-out seed 1 vs. baseline (anonymized both
+sides): emb_cos 0.292 → 0.290, jerk_w 0.0081 → 0.0041 (~2×), length 2.50 → 1.07.
