@@ -36,14 +36,22 @@ isolated DGS Types citation form, and the forms are concatenated:
 
 <table>
   <tr>
-    <th width="50%">Stitched isolated forms — not fluent</th>
-    <th width="50%">Real fluent reference (DGS Corpus)</th>
+    <th width="33%">1. Naive stitch (spoken-to-signed)<br/><sub>where we started — 565 frames</sub></th>
+    <th width="33%">2. Our stitch (<code>fluent</code> preset)<br/><sub>current approach — 199 frames</sub></th>
+    <th width="33%">3. Real signing (target)<br/><sub>the actual reference — 125 frames</sub></th>
   </tr>
   <tr>
-    <td><img src='assets/example/poses/stitched.gif' style="width:100%;"></td>
-    <td><img src='assets/example/pose.gif' style="width:100%;"></td>
+    <td><img src='assets/example/poses/naive.gif' style="width:100%;"></td>
+    <td><img src='assets/example/poses/fluent.gif' style="width:100%;"></td>
+    <td><img src='assets/example/poses/reference.gif' style="width:100%;"></td>
   </tr>
 </table>
+
+The naive concatenation of isolated citation forms (left) is slow and stilted.
+Our `fluent` stitch (middle) trims the citation holds, de-jitters the motion, and
+compresses toward natural length — measurably closer to the real signing (right)
+in duration, smoothness, hand position, and SignCLIP embedding. The remaining gap
+(true coarticulation) is what a learned model would close.
 
 ## What we found
 
