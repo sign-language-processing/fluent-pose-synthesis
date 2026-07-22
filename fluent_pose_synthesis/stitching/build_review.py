@@ -62,13 +62,13 @@ def build(n: int, seed: int) -> list[dict]:
             if pose is None or pose.body.data.shape[0] == 0:
                 continue
             with contextlib.redirect_stdout(io.StringIO()):
-                uri = _mp4_data_uri(pose, size=150, fps=10, anonymize=False)
+                uri = _mp4_data_uri(pose, size=150, fps=25, anonymize=False)
             signs.append({"gloss": g.gloss, "meaning": g.english, "video": uri})
 
         with contextlib.redirect_stdout(io.StringIO()):
-            naive_uri = _mp4_data_uri(naive, size=240, fps=15, anonymize=True)
-            fluent_uri = _mp4_data_uri(fluent, size=240, fps=15, anonymize=True)
-            gold_uri = _mp4_data_uri(gold, size=240, fps=15, anonymize=True)
+            naive_uri = _mp4_data_uri(naive, size=240, fps=30, anonymize=True)
+            fluent_uri = _mp4_data_uri(fluent, size=240, fps=30, anonymize=True)
+            gold_uri = _mp4_data_uri(gold, size=240, fps=30, anonymize=True)
 
         out.append({
             "english": s.english, "german": s.german,

@@ -93,6 +93,9 @@ class StitchConfig:
     # An idle hand is only bridged across gaps up to this many frames; over longer
     # gaps it stays absent (a hand used once shouldn't hover up the whole sentence).
     hand_max_gap: int = 12
+    # Drop hand appearances shorter than this (frames) — a brief non-dominant hand
+    # is usually an incidental gesture, not a real two-handed sign.
+    hand_min_span: int = 22
 
     # Raise the hands from rest before the first sign and lower them after the last
     # (a natural rest → sign → rest envelope). Costs distribution metrics by design.
@@ -322,35 +325,55 @@ def _resolve_hand_gaps(body: NumPyPoseBody, header, pre_conf: np.ndarray, config
     * long gap, or leading/trailing: leave the hand absent (masked) — a hand used
       once should not hover up through the whole sentence.
     """
-    idx = _hand_point_indices(header)
-    if not idx:
-        return
     data = np.ma.getdata(body.data)
     conf = body.confidence
     mask = np.ma.getmaskarray(body.data).copy()
-    exp, max_gap = config.hand_ease_exp, config.hand_max_gap
+    n = data.shape[0]
+    exp, max_gap, min_span = config.hand_ease_exp, config.hand_max_gap, config.hand_min_span
     ease = config.hand_transition == "ease_in"
-    for k in idx:
-        valid = np.where(pre_conf[:, 0, k] > 0)[0]
-        absent = np.ones(data.shape[0], dtype=bool)  # frames to leave masked
-        if len(valid) >= 1:
-            absent[valid[0]:valid[-1] + 1] = False  # keep the active span; edges masked
-        if len(valid) >= 2:
-            for a, b in zip(valid[:-1], valid[1:]):
-                gap = b - a - 1
-                if gap <= 0:
-                    continue
-                if gap <= max_gap:
-                    for f in range(a + 1, b):
-                        t = (f - a) / (b - a)
-                        te = t ** exp if ease else t
-                        data[f, 0, k, :] = data[a, 0, k, :] * (1 - te) + data[b, 0, k, :] * te
-                        conf[f, 0, k] = 1.0
-                else:
-                    absent[a + 1:b] = True  # long gap -> hand disappears
-        conf[absent, 0, k] = 0.0
-        mask[absent, 0, k, :] = True
-        mask[~absent, 0, k, :] = False
+    offset = 0
+    for c in header.components:
+        if c.name not in ("LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"):
+            offset += len(c.points)
+            continue
+        comp_idx = list(range(offset, offset + len(c.points)))
+        offset += len(c.points)
+        # Active frames for the whole hand (all keypoints share drop/keep) — from
+        # the wrist, keeping only spans long enough to be a real sign.
+        active = pre_conf[:, 0, comp_idx[0]] > 0
+        keep = np.zeros(n, dtype=bool)
+        i = 0
+        while i < n:
+            if active[i]:
+                j = i
+                while j < n and active[j]:
+                    j += 1
+                if j - i >= min_span:
+                    keep[i:j] = True
+                i = j
+            else:
+                i += 1
+        valid = np.where(keep)[0]
+        for k in comp_idx:
+            absent = np.ones(n, dtype=bool)
+            if len(valid) >= 1:
+                absent[valid[0]:valid[-1] + 1] = False
+            if len(valid) >= 2:
+                for a, b in zip(valid[:-1], valid[1:]):
+                    gap = b - a - 1
+                    if gap <= 0:
+                        continue
+                    if gap <= max_gap:
+                        for f in range(a + 1, b):
+                            t = (f - a) / (b - a)
+                            te = t ** exp if ease else t
+                            data[f, 0, k, :] = data[a, 0, k, :] * (1 - te) + data[b, 0, k, :] * te
+                            conf[f, 0, k] = 1.0
+                    else:
+                        absent[a + 1:b] = True  # long gap -> hand disappears
+            conf[absent, 0, k] = 0.0
+            mask[absent, 0, k, :] = True
+            mask[~absent, 0, k, :] = False
     body.data = np.ma.array(data, mask=mask)
 
 
