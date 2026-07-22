@@ -80,7 +80,7 @@ class StitchConfig:
     # Remove a hand that is idle for a sign (resting/low/undetected) so stitching
     # interpolates it from active neighbours instead of snapping to a rest pose.
     drop_inactive_hands: bool = False
-    hand_active_min: float = 0.3  # min fraction of frames a hand must be "raised"
+    hand_active_ratio: float = 0.2  # drop a hand moving < this * the active hand's movement
     # How a removed hand is filled back across the gap: "linear" (constant-speed
     # slide, unnatural) or "ease_in" (hold near the previous pose, then a quick
     # preparation stroke into the next sign, like real signing).
@@ -450,29 +450,43 @@ def _anonymize(pose: Pose) -> Pose:
     return remove_appearance(pose)
 
 
-def _drop_inactive_hands(pose: Pose, active_min: float) -> Pose:
-    """Mask a hand that stays idle for this sign (undetected, or wrist not raised
-    above the elbow for at least ``active_min`` of frames). Removing it lets the
-    stitcher interpolate that hand from neighbouring signs instead of freezing a
-    resting hand into the sentence."""
+def _hand_activity(pose: Pose, side: str) -> tuple[float, float]:
+    """(detected_fraction, mean wrist movement per detected frame) for a hand.
+
+    A resting hand is *still and/or undetected* — not merely low — so activity is
+    measured by motion, not height (a chest-level two-handed sign like HOUSE has
+    both hands active but below the elbow)."""
+    data = np.ma.getdata(pose.body.data)
+    conf = pose.body.confidence
+    wi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_WRIST")
+    detected = conf[:, 0, wi] > 0
+    det_frac = float(detected.mean())
+    w = data[:, 0, wi, :2]
+    step = np.linalg.norm(np.diff(w, axis=0), axis=-1)
+    valid_step = detected[1:] & detected[:-1]
+    move = float(np.mean(step[valid_step])) if valid_step.any() else 0.0
+    return det_frac, move
+
+
+def _drop_inactive_hands(pose: Pose, active_ratio: float) -> Pose:
+    """Mask a hand that is idle for this sign (mostly undetected, or moving far
+    less than the active hand — i.e. resting), so the stitcher interpolates it
+    from neighbouring signs instead of freezing a resting hand into the sentence."""
     data = pose.body.data
     conf = pose.body.confidence
-    n = data.shape[0]
-    if n == 0:
+    if data.shape[0] == 0:
         return pose
     hand_comps = {"LEFT": "LEFT_HAND_LANDMARKS", "RIGHT": "RIGHT_HAND_LANDMARKS"}
+    try:
+        act = {s: _hand_activity(pose, s) for s in hand_comps}
+    except Exception:
+        return pose
+    active_move = max(m for _, m in act.values()) or 1.0
     for side, comp in hand_comps.items():
-        try:
-            wi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_WRIST")
-            ei = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_ELBOW")
-        except Exception:
+        det_frac, move = act[side]
+        inactive = det_frac < 0.3 or move < active_ratio * active_move
+        if not inactive:
             continue
-        detected = conf[:, 0, wi] > 0
-        raised = np.ma.getdata(data)[:, 0, wi, 1] < np.ma.getdata(data)[:, 0, ei, 1]
-        active_frac = float(np.mean(detected & raised))
-        if active_frac >= active_min:
-            continue
-        # Mask this hand's landmarks for the whole sign.
         offset = 0
         for c in pose.header.components:
             if c.name == comp:
@@ -496,7 +510,7 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
         # (anonymization needs the full holistic layout).
         poses = [_anonymize(p) for p in poses]
     if config.drop_inactive_hands:
-        poses = [_drop_inactive_hands(p, config.hand_active_min) for p in poses]
+        poses = [_drop_inactive_hands(p, config.hand_active_ratio) for p in poses]
     if config.reduce_holistic:
         poses = [reduce_holistic(p) for p in poses]
     if config.normalize:

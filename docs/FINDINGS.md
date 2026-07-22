@@ -290,6 +290,16 @@ the *reference* keeps its own resting hand, so removing ours slightly worsens th
 position/embedding match on some samples — but transition smoothness (jerk) and
 the visual result clearly improve, which was the actual complaint.
 
+## Detecting a resting hand: motion, not height
+
+First cut used "wrist above the elbow" to decide a hand was active — which wrongly
+dropped the moving hand of chest-level two-handed signs (e.g. HOUSE/HAUS: both hands
+detected and moving, neither above the elbow), and because it was the last sign the
+hand had no next sign to return from, so it vanished. Fixed by measuring **motion**:
+a hand is dropped only if it is mostly undetected, or moves less than `hand_active_ratio`
+(0.2) of the more-active hand. HOUSE now keeps both hands; genuinely one-handed signs
+still drop the resting hand.
+
 ## Removed-hand return: ease-in, not linear
 
 A masked hand filled by plain linear interpolation *slides* across the gap at
