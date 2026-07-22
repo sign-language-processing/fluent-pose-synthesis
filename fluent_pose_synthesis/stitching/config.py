@@ -38,6 +38,11 @@ SEGMENTATION_MODEL_DIR = Path(
     )
 )
 
+# --- Rest pose (a real hands-down corpus frame, anonymized) --------------
+REST_POSE_PATH = Path(
+    os.environ.get("REST_POSE_PATH", Path(__file__).parent / "assets" / "rest_pose.pose")
+)
+
 # --- Pose format constants ----------------------------------------------
 POSE_FPS = 50.0  # native DGS corpus / types frame rate
 HOLISTIC_POINTS = 586

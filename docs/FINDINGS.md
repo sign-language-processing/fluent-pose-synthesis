@@ -311,6 +311,20 @@ the next sign's hand position. Verified on a gap: linear speed is flat (~4.6/fra
 while ease-in ramps (7→13/frame) into the next sign. Butterworth then rounds the
 corner, giving hold → smooth acceleration.
 
+## Idle hands go absent + rest envelope (review feedback)
+
+Review of the rendered sentences surfaced two more issues:
+
+* **A hand used once was held up the whole sentence.** The gap-fill interpolated a
+  removed hand between distant active signs. Fixed: only short gaps (<= `hand_max_gap`)
+  are eased; over longer gaps the hand stays **absent**. Also, resting-hand detection
+  now needs a hand to be *both still and low* — movement alone kept the number '5'
+  (still but raised), height alone dropped HOUSE (moving but chest-level).
+* **Sequences started/ended mid-air.** Added a `rest_envelope`: the hands rise from a
+  real anonymized rest pose (a corpus hands-down frame) before the first sign and lower
+  after the last. This deliberately worsens the distribution metrics (adds non-signing
+  frames) but reads as natural signing — a design choice, not an optimization.
+
 ## Final `fluent` preset
 
 `anonymize` + `drop_inactive_hands` + segmentation trim + Butterworth 6 Hz +

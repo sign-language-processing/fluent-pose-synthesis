@@ -160,8 +160,9 @@ stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", pad
 |---|---|---|
 | `reduce_holistic`, `normalize` | `True` | pre-processing |
 | `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) *per source sign*, before stitching |
-| `drop_inactive_hands` | `False` | remove a *resting* hand (still or undetected — detected by motion, not height, so chest-level two-handed signs keep both hands) so the stitcher interpolates it from active neighbours |
-| `hand_transition` | `"linear"` | how a removed hand returns: `"ease_in"` holds near the previous pose then makes a preparation stroke into the next sign, instead of a constant-speed slide |
+| `drop_inactive_hands` | `False` | remove a *resting* hand — one that is **both still and low** (or undetected); movement keeps chest-level two-handed signs, height keeps still-but-raised handshapes (e.g. the number "5"). Never drops both hands |
+| `hand_transition` | `"linear"` | how a briefly-removed hand returns: `"ease_in"` holds near the previous pose then makes a preparation stroke into the next sign. A hand idle longer than `hand_max_gap` stays absent (not held up across the sentence) |
+| `rest_envelope` | `False` | raise the hands from a rest pose before the first sign and lower them after the last (natural rest→sign→rest; costs distribution metrics by design) |
 | `trim`, `trim_method` | `True`, `"hand_raise"` | per-sign lead-in/out trim; `"segmentation"` uses the model, falls back to `hand_raise` |
 | `padding` | `0.20` | seconds of interpolated transition between signs |
 | `speed` | `1.0` | uniform tempo compression (>1 = shorter) |

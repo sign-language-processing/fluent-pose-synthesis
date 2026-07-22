@@ -56,6 +56,9 @@ fluent-stitch = "fluent_pose_synthesis.stitching.cli:main"
 [tool.setuptools]
 packages = ["fluent_pose_synthesis", "fluent_pose_synthesis.stitching"]
 
+[tool.setuptools.package-data]
+"fluent_pose_synthesis.stitching" = ["assets/*.pose"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

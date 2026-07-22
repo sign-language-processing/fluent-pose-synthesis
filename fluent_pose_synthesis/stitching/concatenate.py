@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -80,12 +81,23 @@ class StitchConfig:
     # Remove a hand that is idle for a sign (resting/low/undetected) so stitching
     # interpolates it from active neighbours instead of snapping to a rest pose.
     drop_inactive_hands: bool = False
-    hand_active_ratio: float = 0.2  # drop a hand moving < this * the active hand's movement
+    # A hand is "resting" (droppable) when it moves little AND hangs low. Movement
+    # is normalized by torso length; height is 1 at the shoulder, 0 at the hip.
+    hand_move_floor: float = 0.012   # below this (torso/frame) counts as still
+    hand_height_floor: float = 0.55  # below this counts as low / not in signing space
     # How a removed hand is filled back across the gap: "linear" (constant-speed
     # slide, unnatural) or "ease_in" (hold near the previous pose, then a quick
     # preparation stroke into the next sign, like real signing).
     hand_transition: str = "linear"
     hand_ease_exp: float = 3.0  # ease-in exponent (higher = holds longer, faster end)
+    # An idle hand is only bridged across gaps up to this many frames; over longer
+    # gaps it stays absent (a hand used once shouldn't hover up the whole sentence).
+    hand_max_gap: int = 12
+
+    # Raise the hands from rest before the first sign and lower them after the last
+    # (a natural rest → sign → rest envelope). Costs distribution metrics by design.
+    rest_envelope: bool = False
+    rest_frames: int = 10
 
 
 BASELINE = StitchConfig()
@@ -292,38 +304,104 @@ def _coarticulate(poses: list[Pose], strength: float) -> None:
         poses[i].body.data = poses[i].body.data + offset
 
 
-def _fill_hand_gaps(body: NumPyPoseBody, header, exp: float) -> None:
-    """Fill removed-hand gaps with an ease-in curve instead of a linear slide.
-
-    For each hand keypoint, a masked span between two active frames is filled so
-    the hand *holds* near its previous pose, then accelerates into the next sign
-    (a preparation stroke). Leading/trailing gaps stay masked (hand absent until
-    first needed). Operates in place; sets confidence on filled frames."""
+def _hand_point_indices(header) -> list[int]:
     idx, offset = [], 0
     for c in header.components:
         if c.name in ("LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"):
             idx.extend(range(offset, offset + len(c.points)))
         offset += len(c.points)
+    return idx
+
+
+def _resolve_hand_gaps(body: NumPyPoseBody, header, pre_conf: np.ndarray, config: StitchConfig) -> None:
+    """Decide what a removed hand does across each gap, using the confidence
+    *before* the global interpolation to locate the original masked spans.
+
+    * short gap (<= hand_max_gap): keep the hand, ease it in (hold near the
+      previous pose, then a preparation stroke into the next sign);
+    * long gap, or leading/trailing: leave the hand absent (masked) — a hand used
+      once should not hover up through the whole sentence.
+    """
+    idx = _hand_point_indices(header)
     if not idx:
         return
     data = np.ma.getdata(body.data)
     conf = body.confidence
-    for k in idx:
-        valid = np.where(conf[:, 0, k] > 0)[0]
-        if len(valid) < 2:
-            continue
-        for a, b in zip(valid[:-1], valid[1:]):
-            if b <= a + 1:
-                continue
-            for f in range(a + 1, b):
-                t = (f - a) / (b - a)
-                te = t ** exp
-                data[f, 0, k, :] = data[a, 0, k, :] * (1 - te) + data[b, 0, k, :] * te
-                conf[f, 0, k] = 1.0
     mask = np.ma.getmaskarray(body.data).copy()
+    exp, max_gap = config.hand_ease_exp, config.hand_max_gap
+    ease = config.hand_transition == "ease_in"
     for k in idx:
-        mask[:, 0, k, :] = (conf[:, 0, k] <= 0)[:, None]
+        valid = np.where(pre_conf[:, 0, k] > 0)[0]
+        absent = np.ones(data.shape[0], dtype=bool)  # frames to leave masked
+        if len(valid) >= 1:
+            absent[valid[0]:valid[-1] + 1] = False  # keep the active span; edges masked
+        if len(valid) >= 2:
+            for a, b in zip(valid[:-1], valid[1:]):
+                gap = b - a - 1
+                if gap <= 0:
+                    continue
+                if gap <= max_gap:
+                    for f in range(a + 1, b):
+                        t = (f - a) / (b - a)
+                        te = t ** exp if ease else t
+                        data[f, 0, k, :] = data[a, 0, k, :] * (1 - te) + data[b, 0, k, :] * te
+                        conf[f, 0, k] = 1.0
+                else:
+                    absent[a + 1:b] = True  # long gap -> hand disappears
+        conf[absent, 0, k] = 0.0
+        mask[absent, 0, k, :] = True
+        mask[~absent, 0, k, :] = False
     body.data = np.ma.array(data, mask=mask)
+
+
+@lru_cache(maxsize=1)
+def _rest_pose():
+    from fluent_pose_synthesis.stitching.config import REST_POSE_PATH
+    from fluent_pose_synthesis.stitching.pose_lookup import load_pose
+
+    return load_pose(REST_POSE_PATH)
+
+
+def _rest_envelope(pose: Pose, config: StitchConfig) -> Pose:
+    """Prepend a rest→first-frame rise and append a last-frame→rest lower, so the
+    sentence starts and ends with the hands at rest. Absent (masked) hands stay
+    absent through the envelope; present hands sweep from/to the rest pose."""
+    from pose_format.utils.generic import normalize_pose_size, pose_normalization_info
+
+    n = config.rest_frames
+    if n <= 0:
+        return pose
+    rest = _rest_pose().get_components([c.name for c in pose.header.components],
+                                       {c.name: c.points for c in pose.header.components})
+    # match rest to the pose's scale (both anonymized -> shoulder-normalize + size)
+    rest = rest.normalize(pose_normalization_info(rest.header))
+    normalize_pose_size(rest)
+    src = pose.normalize(pose_normalization_info(pose.header))
+    normalize_pose_size(src)
+    rd = np.ma.getdata(rest.body.data)[0]           # (people,points,dims)
+    sd = np.ma.getdata(src.body.data)
+    smask = np.ma.getmaskarray(src.body.data)
+
+    def ramp(end_frame, end_mask, rising: bool):
+        frames = np.empty((n, *end_frame.shape))
+        fmask = np.zeros((n, *end_frame.shape), dtype=bool)
+        for i in range(n):
+            t = (i + 1) / (n + 1)
+            te = t if rising else (1 - t)  # rising: rest->end ; lower: end->rest
+            frames[i] = rd * (1 - te) + end_frame * te
+            fmask[i] = end_mask  # absent hands stay absent through the ramp
+            frames[i][end_mask] = rd[end_mask]
+        return frames, fmask
+
+    lead, lead_m = ramp(sd[0], smask[0], rising=True)
+    tail, tail_m = ramp(sd[-1], smask[-1], rising=False)
+    new_data = np.ma.array(np.concatenate([lead, sd, tail]),
+                           mask=np.concatenate([lead_m, smask, tail_m]))
+    new_conf = np.concatenate([
+        np.where(lead_m[:, :, :, 0], 0.0, 1.0),
+        src.body.confidence,
+        np.where(tail_m[:, :, :, 0], 0.0, 1.0)])
+    return Pose(src.header, NumPyPoseBody(fps=src.body.fps, data=new_data, confidence=new_conf))
 
 
 def _create_padding(seconds: float, example: Pose) -> NumPyPoseBody:
@@ -390,10 +468,11 @@ def _smooth_concatenate(poses: list[Pose], config: StitchConfig, connection_done
     new_data = np.concatenate([p.body.data for p in poses])
     new_conf = np.concatenate([p.body.confidence for p in poses])
     body = NumPyPoseBody(fps=poses[0].body.fps, data=new_data, confidence=new_conf)
-    if config.drop_inactive_hands and config.hand_transition == "ease_in":
-        # Ease-in the removed-hand gaps before the linear fill handles the rest.
-        _fill_hand_gaps(body, poses[0].header, config.hand_ease_exp)
+    pre_conf = body.confidence.copy() if config.drop_inactive_hands else None
     body = body.interpolate(kind="linear")
+    if config.drop_inactive_hands:
+        # Ease short removed-hand gaps; leave long ones absent (using pre-interp conf).
+        _resolve_hand_gaps(body, poses[0].header, pre_conf, config)
     return _finish(body, poses[0].header, config)
 
 
@@ -450,28 +529,33 @@ def _anonymize(pose: Pose) -> Pose:
     return remove_appearance(pose)
 
 
-def _hand_activity(pose: Pose, side: str) -> tuple[float, float]:
-    """(detected_fraction, mean wrist movement per detected frame) for a hand.
+def _hand_activity(pose: Pose, side: str) -> tuple[float, float, float]:
+    """(detected_fraction, torso-normalized movement, relative height) for a hand.
 
-    A resting hand is *still and/or undetected* — not merely low — so activity is
-    measured by motion, not height (a chest-level two-handed sign like HOUSE has
-    both hands active but below the elbow)."""
+    Height is 1 at the shoulder, 0 at the hip, negative below — so a resting hand
+    that hangs low reads near/below 0, while a raised handshape sign (e.g. the
+    number '5', still but held up) reads high even with little movement."""
     data = np.ma.getdata(pose.body.data)
     conf = pose.body.confidence
     wi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_WRIST")
+    si = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_SHOULDER")
+    hi = pose.header._get_point_index("POSE_LANDMARKS", f"{side}_HIP")
     detected = conf[:, 0, wi] > 0
     det_frac = float(detected.mean())
+    torso = float(np.median(data[:, 0, hi, 1] - data[:, 0, si, 1])) or 1.0
     w = data[:, 0, wi, :2]
     step = np.linalg.norm(np.diff(w, axis=0), axis=-1)
     valid_step = detected[1:] & detected[:-1]
-    move = float(np.mean(step[valid_step])) if valid_step.any() else 0.0
-    return det_frac, move
+    move = (float(np.mean(step[valid_step])) if valid_step.any() else 0.0) / abs(torso)
+    rel_height = float(np.median(data[:, 0, hi, 1] - w[:, 1]) / abs(torso))
+    return det_frac, move, rel_height
 
 
-def _drop_inactive_hands(pose: Pose, active_ratio: float) -> Pose:
-    """Mask a hand that is idle for this sign (mostly undetected, or moving far
-    less than the active hand — i.e. resting), so the stitcher interpolates it
-    from neighbouring signs instead of freezing a resting hand into the sentence."""
+def _drop_inactive_hands(pose: Pose, move_floor: float, height_floor: float) -> Pose:
+    """Mask a hand that rests for this sign — mostly undetected, or *both* still
+    and low (hanging, not in signing space) — so the stitcher interpolates it from
+    neighbours instead of freezing a resting hand into the sentence. Never drops
+    both hands (keeps the more active one)."""
     data = pose.body.data
     conf = pose.body.confidence
     if data.shape[0] == 0:
@@ -481,11 +565,15 @@ def _drop_inactive_hands(pose: Pose, active_ratio: float) -> Pose:
         act = {s: _hand_activity(pose, s) for s in hand_comps}
     except Exception:
         return pose
-    active_move = max(m for _, m in act.values()) or 1.0
+    drop = {}
+    for side in hand_comps:
+        det, move, height = act[side]
+        drop[side] = det < 0.3 or (move < move_floor and height < height_floor)
+    if all(drop.values()):  # keep the more active hand
+        keep = max(hand_comps, key=lambda s: act[s][1] + act[s][2])
+        drop[keep] = False
     for side, comp in hand_comps.items():
-        det_frac, move = act[side]
-        inactive = det_frac < 0.3 or move < active_ratio * active_move
-        if not inactive:
+        if not drop[side]:
             continue
         offset = 0
         for c in pose.header.components:
@@ -510,7 +598,7 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
         # (anonymization needs the full holistic layout).
         poses = [_anonymize(p) for p in poses]
     if config.drop_inactive_hands:
-        poses = [_drop_inactive_hands(p, config.hand_active_ratio) for p in poses]
+        poses = [_drop_inactive_hands(p, config.hand_move_floor, config.hand_height_floor) for p in poses]
     if config.reduce_holistic:
         poses = [reduce_holistic(p) for p in poses]
     if config.normalize:
@@ -532,4 +620,6 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
     normalize_pose_size(pose)
     if config.hand_shift is not None:
         pose = _apply_hand_shift(pose, config.hand_shift)
+    if config.rest_envelope:
+        pose = _rest_envelope(pose, config)
     return pose
