@@ -220,3 +220,33 @@ validated improvement**: the `fluent` preset (segmentation trim + 6 Hz low-pass
 baseline on SignCLIP embedding distance, motion smoothness, length, and hand
 position — on held-out data. The residual gap (still not *fluent*) remains the
 citation-vs-fluent coarticulation problem for a learned model to close.
+
+---
+
+# Part 4 — Pose anonymization (constant appearance)
+
+Each gloss is sourced from a *different* DGS-Types signer, so the raw stitch
+mixes body shapes. `StitchConfig(anonymize=True)` maps every source sign to the
+canonical mean appearance (pose-anonymization `remove_appearance`) **before**
+stitching, giving a single consistent signer. To compare like-for-like, the
+evaluation can anonymize the reference too (`anonymize_ref=True`), so hypothesis
+and reference share one body shape.
+
+## Body-shape-matched results (both sides anonymized, n=30 seed 0)
+
+| config | emb_cos ↓ | jerk_w ↓ | posy_w ↓ | length →1 |
+|---|---|---|---|---|
+| baseline | 0.276 | 0.0074 | 0.364 | 2.45 |
+| segmentation trim | 0.280 | 0.0193 | 0.393 | 1.45 |
+| seg + Butterworth 6 Hz | 0.281 | 0.0042 | 0.391 | 1.45 |
+| **seg + LP6 + cap40 (`fluent`)** | **0.275** | **0.0040** | **0.358** | **0.97** |
+
+The `fluent` recipe still beats the baseline on embedding, jerk, y-position and
+length **after** removing the appearance confound — so the improvement is
+content/motion, not just a body-shape artifact. The margins are smaller than the
+raw comparison (Part 3), which means part of the raw embedding gain came from the
+naive stitch mixing appearances; anonymization both fixes that (consistent output
+signer) and isolates the genuine motion improvement.
+
+`anonymize=True` is now part of the `fluent` preset, and the README's three-tile
+comparison is rendered anonymized (one signer) via `stitching/visualize.py`.

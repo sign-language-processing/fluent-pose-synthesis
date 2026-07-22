@@ -39,6 +39,12 @@ segmentation = [
     "pytorch_lightning",
     "scikit-learn",
 ]
+# Rendering poses to GIF/MP4 (needs ffmpeg on PATH).
+viz = [
+    "vidgear",
+    "opencv-python",
+    "pose-anonymization @ git+https://github.com/sign-language-processing/pose-anonymization",
+]
 dev = [
     "pytest",
     "ruff",

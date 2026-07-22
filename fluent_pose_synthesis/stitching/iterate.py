@@ -40,15 +40,23 @@ def _stitch_fn(config):
     return fn
 
 
-def evaluate(config, n: int, seed: int, embed: bool = False) -> dict:
+def evaluate(config, n: int, seed: int, embed: bool = False, anonymize_ref: bool = False) -> dict:
     """Evaluate a config on the fixed sample. When ``embed`` and the SignCLIP
     service is up, also compute per-sentence embedding cosine distance and the
-    Fréchet Pose Distance (distribution-level) over the batch."""
+    Fréchet Pose Distance (distribution-level) over the batch.
+
+    ``anonymize_ref`` maps the reference to the canonical mean appearance too, so
+    hypothesis and reference are compared in the same body shape (pair with
+    ``config.anonymize``)."""
     from fluent_pose_synthesis.stitching import signclip as SC
 
     fn = _stitch_fn(config)
     sents = get_sents(n, seed)
     do_embed = embed and SC.health()
+    ref_anon = None
+    if anonymize_ref:
+        from fluent_pose_synthesis.stitching.concatenate import _anonymize as _anon
+        ref_anon = _anon
     rows, hyp_embs, ref_embs = [], [], []
     for s in sents:
         try:
@@ -56,6 +64,8 @@ def evaluate(config, n: int, seed: int, embed: bool = False) -> dict:
             if hyp is None:
                 continue
             ref = dc.sentence_pose(s)
+            if ref_anon is not None:
+                ref = ref_anon(ref)
             row = M.score(hyp, ref)
         except Exception as exc:  # noqa: BLE001
             rows.append({"error": str(exc)})
@@ -80,7 +90,8 @@ def _get(agg, col):
     return agg.get(col, float("nan")) if col == "emb_fpd" else agg.get(f"{col}_mean", float("nan"))
 
 
-def run_batch(batch: list[dict], run_dir: str, n: int = 30, seed: int = 0, embed: bool = False) -> list[dict]:
+def run_batch(batch: list[dict], run_dir: str, n: int = 30, seed: int = 0, embed: bool = False,
+              anonymize_ref: bool = False) -> list[dict]:
     run = Path(run_dir)
     run.mkdir(parents=True, exist_ok=True)
     tsv = run / "results.tsv"
@@ -90,7 +101,7 @@ def run_batch(batch: list[dict], run_dir: str, n: int = 30, seed: int = 0, embed
 
     results = []
     for item in batch:
-        agg = evaluate(item["config"], n, seed, embed=embed)
+        agg = evaluate(item["config"], n, seed, embed=embed, anonymize_ref=anonymize_ref)
         row = {"label": item["label"], "hypothesis": item["hypothesis"], **agg}
         results.append(row)
         with open(tsv, "a") as f:

@@ -32,6 +32,10 @@ class StitchConfig:
     reduce_holistic: bool = True
     normalize: bool = True
 
+    # Map every source sign to one canonical appearance before stitching, so the
+    # sentence looks like a single signer (pose-anonymization). Off by default.
+    anonymize: bool = False
+
     # Trimming of per-sign lead-in / lead-out
     trim: bool = True
     trim_method: str = "hand_raise"  # "hand_raise" | "segmentation" | "none"
@@ -392,12 +396,23 @@ def _copy_pose(p: Pose) -> Pose:
     return Pose(header=p.header, body=body)
 
 
+def _anonymize(pose: Pose) -> Pose:
+    """Transfer a pose to the canonical mean appearance (pose-anonymization)."""
+    from pose_anonymization.appearance import remove_appearance
+
+    return remove_appearance(pose)
+
+
 def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pose:
     """Stitch isolated poses into one sequence under ``config``."""
     if not poses:
         raise ValueError("No poses to concatenate")
     poses = [_copy_pose(p) for p in poses]
 
+    if config.anonymize:
+        # Constant appearance across signs; must precede reduce_holistic
+        # (anonymization needs the full holistic layout).
+        poses = [_anonymize(p) for p in poses]
     if config.reduce_holistic:
         poses = [reduce_holistic(p) for p in poses]
     if config.normalize:

@@ -53,6 +53,10 @@ compresses toward natural length — measurably closer to the real signing (righ
 in duration, smoothness, hand position, and SignCLIP embedding. The remaining gap
 (true coarticulation) is what a learned model would close.
 
+All three are rendered through the same [`stitching/visualize.py`](fluent_pose_synthesis/stitching/visualize.py):
+each source sign is **anonymized to one canonical signer** (pose-anonymization)
+so the sequence — and every tile — shows a single consistent body.
+
 ## What we found
 
 Measured over random DGS Corpus samples (details and per-config tables in
@@ -97,8 +101,8 @@ diagnosed *where* the DTWp error lives and tried to move it directly, drawing on
 A third study ([`docs/FINDINGS.md`](docs/FINDINGS.md) Part 3) dropped DTWp as the
 target and optimized **distribution closeness** and a **SignCLIP embedding
 distance** instead — and got a real, held-out-validated improvement. The
-**recommended `fluent` preset** (segmentation trim + 6 Hz low-pass + duration
-cap) beats the spoken-to-signed baseline on:
+**recommended `fluent` preset** (anonymize to one signer + segmentation trim +
+6 Hz low-pass + duration cap) beats the spoken-to-signed baseline on:
 
 | metric (held-out seed 1) | baseline | `fluent` |
 |---|---|---|
@@ -151,6 +155,7 @@ stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", pad
 | field | default | effect |
 |---|---|---|
 | `reduce_holistic`, `normalize` | `True` | pre-processing |
+| `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) before stitching |
 | `trim`, `trim_method` | `True`, `"hand_raise"` | per-sign lead-in/out trim; `"segmentation"` uses the model, falls back to `hand_raise` |
 | `padding` | `0.20` | seconds of interpolated transition between signs |
 | `speed` | `1.0` | uniform tempo compression (>1 = shorter) |
@@ -162,8 +167,9 @@ stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", pad
 | `hand_shift` | `None` | `(dx,dy,dz)` distribution-alignment shift of hands |
 | `connection_search`, `savgol` | `True` | closest-frame join, temporal smoothing |
 
-Named presets live in `experiments.CONFIGS`; `fluent` (segmentation trim +
-9 Hz low-pass) is the recommended default, `fluent_short` adds a duration cap.
+Named presets live in `experiments.CONFIGS`; `fluent` (anonymize + segmentation
+trim + 6 Hz low-pass + duration cap) is the recommended default, `fluent_long`
+keeps the citation length.
 
 ### Evaluate against the DGS Corpus
 
@@ -203,6 +209,7 @@ fluent_pose_synthesis/stitching/
 ├── concatenate.py   # config-driven stitching (baseline-faithful + toggles)
 ├── metrics.py       # DTWp/matched/clean + mask-aware velocity/accel/jerk/position distributions
 ├── signclip.py      # SignCLIP embedding client + cosine / Fréchet Pose Distance
+├── visualize.py     # render poses to GIF (anonymized, consistent framing)
 ├── harness.py       # sample sentences → reconstruct → score
 ├── experiments.py   # named configs (incl. `fluent`), A/B sweep, TSV/JSON logging
 ├── analysis.py      # corpus vs. reconstruction characteristics
