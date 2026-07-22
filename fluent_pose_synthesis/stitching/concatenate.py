@@ -81,6 +81,11 @@ class StitchConfig:
     # interpolates it from active neighbours instead of snapping to a rest pose.
     drop_inactive_hands: bool = False
     hand_active_min: float = 0.3  # min fraction of frames a hand must be "raised"
+    # How a removed hand is filled back across the gap: "linear" (constant-speed
+    # slide, unnatural) or "ease_in" (hold near the previous pose, then a quick
+    # preparation stroke into the next sign, like real signing).
+    hand_transition: str = "linear"
+    hand_ease_exp: float = 3.0  # ease-in exponent (higher = holds longer, faster end)
 
 
 BASELINE = StitchConfig()
@@ -287,6 +292,40 @@ def _coarticulate(poses: list[Pose], strength: float) -> None:
         poses[i].body.data = poses[i].body.data + offset
 
 
+def _fill_hand_gaps(body: NumPyPoseBody, header, exp: float) -> None:
+    """Fill removed-hand gaps with an ease-in curve instead of a linear slide.
+
+    For each hand keypoint, a masked span between two active frames is filled so
+    the hand *holds* near its previous pose, then accelerates into the next sign
+    (a preparation stroke). Leading/trailing gaps stay masked (hand absent until
+    first needed). Operates in place; sets confidence on filled frames."""
+    idx, offset = [], 0
+    for c in header.components:
+        if c.name in ("LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"):
+            idx.extend(range(offset, offset + len(c.points)))
+        offset += len(c.points)
+    if not idx:
+        return
+    data = np.ma.getdata(body.data)
+    conf = body.confidence
+    for k in idx:
+        valid = np.where(conf[:, 0, k] > 0)[0]
+        if len(valid) < 2:
+            continue
+        for a, b in zip(valid[:-1], valid[1:]):
+            if b <= a + 1:
+                continue
+            for f in range(a + 1, b):
+                t = (f - a) / (b - a)
+                te = t ** exp
+                data[f, 0, k, :] = data[a, 0, k, :] * (1 - te) + data[b, 0, k, :] * te
+                conf[f, 0, k] = 1.0
+    mask = np.ma.getmaskarray(body.data).copy()
+    for k in idx:
+        mask[:, 0, k, :] = (conf[:, 0, k] <= 0)[:, None]
+    body.data = np.ma.array(data, mask=mask)
+
+
 def _create_padding(seconds: float, example: Pose) -> NumPyPoseBody:
     fps = example.body.fps
     frames = int(seconds * fps)
@@ -351,6 +390,9 @@ def _smooth_concatenate(poses: list[Pose], config: StitchConfig, connection_done
     new_data = np.concatenate([p.body.data for p in poses])
     new_conf = np.concatenate([p.body.confidence for p in poses])
     body = NumPyPoseBody(fps=poses[0].body.fps, data=new_data, confidence=new_conf)
+    if config.drop_inactive_hands and config.hand_transition == "ease_in":
+        # Ease-in the removed-hand gaps before the linear fill handles the rest.
+        _fill_hand_gaps(body, poses[0].header, config.hand_ease_exp)
     body = body.interpolate(kind="linear")
     return _finish(body, poses[0].header, config)
 

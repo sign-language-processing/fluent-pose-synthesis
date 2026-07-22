@@ -290,6 +290,17 @@ the *reference* keeps its own resting hand, so removing ours slightly worsens th
 position/embedding match on some samples — but transition smoothness (jerk) and
 the visual result clearly improve, which was the actual complaint.
 
+## Removed-hand return: ease-in, not linear
+
+A masked hand filled by plain linear interpolation *slides* across the gap at
+constant speed — unnatural, since a real idle hand rests and then makes a quick
+preparation stroke into the next sign. `hand_transition="ease_in"` fills the gap
+with an ease-in curve (`hand_ease_exp`): the hand holds near its previous pose,
+then accelerates to arrive exactly at the next sign's hand — so it also *adopts*
+the next sign's hand position. Verified on a gap: linear speed is flat (~4.6/frame)
+while ease-in ramps (7→13/frame) into the next sign. Butterworth then rounds the
+corner, giving hold → smooth acceleration.
+
 ## Final `fluent` preset
 
 `anonymize` + `drop_inactive_hands` + segmentation trim + Butterworth 6 Hz +
