@@ -56,14 +56,20 @@ def build(n: int, seed: int) -> list[dict]:
 
         signs = []
         for g in s.glosses:
-            if not g.is_lexical:
-                continue
-            pose = dt.get_pose(g.gloss)
+            # Every building block that goes into the stitch — including $-gestures,
+            # pointing ($INDEX) and numbers, which are cropped from the sentence.
+            if g.is_lexical:
+                pose = dt.get_pose(g.gloss)
+                source = "dictionary"
+                if pose is None or pose.body.data.shape[0] == 0:
+                    pose, source = dc.gloss_pose(s, g), "sentence"
+            else:
+                pose, source = dc.gloss_pose(s, g), "sentence"
             if pose is None or pose.body.data.shape[0] == 0:
                 continue
             with contextlib.redirect_stdout(io.StringIO()):
                 uri = _mp4_data_uri(pose, size=150, fps=25, anonymize=False)
-            signs.append({"gloss": g.gloss, "meaning": g.english, "video": uri})
+            signs.append({"gloss": g.gloss, "meaning": g.english or "", "source": source, "video": uri})
 
         with contextlib.redirect_stdout(io.StringIO()):
             naive_uri = _mp4_data_uri(naive, size=240, fps=30, anonymize=True)
