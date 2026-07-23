@@ -1,200 +1,243 @@
 # Fluent (Sign Language) Pose Synthesis
 
-This project aims to make unfluent sign language poses fluent, by post editing the pose sequences.
-It deals with correcting the prosody and intonation.
+Concatenative **pose stitching** for sign language, and an evaluation of how
+close it gets to real, fluent signing.
 
-## Usage
+A spoken-to-signed pipeline turns a sentence into a gloss sequence, looks up an
+**isolated dictionary pose** for each gloss, and stitches them together (see
+[spoken-to-signed-translation](https://github.com/sign-language-processing/spoken-to-signed-translation)).
+The result is understandable but *not fluent*: isolated citation forms are slow,
+fully-formed, and full of preparation/hold/retraction frames, whereas fluent
+signing is short, reduced, and co-articulated.
 
+This repository (a) measures that gap against the **DGS Corpus** — which gives us,
+for every sentence, the exact fluent reference *and* the gloss segmentation — and
+(b) improves the stitching to close as much of it as pure concatenation can.
 
-### 1. Environment Setup
+> **History.** This project originally proposed a diffusion model to post-edit
+> stitched sequences into fluent ones. That model-based code has been removed on
+> the `stitching-improvements` branch in favour of first making the *stitching*
+> as good as it can be, and quantifying the residual gap a learned model would
+> still need to bridge. See [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
-We recommend using a virtual environment (e.g., `venv` or `conda`) and installing dependencies via `pyproject.toml`.
+## The problem, in one example
 
-```bash
-# Clone the repository
-git clone https://github.com/sign-language-processing/fluent-pose-synthesis.git
-cd fluent-pose-synthesis
+An English sentence is translated to glosses, each gloss is replaced by its
+isolated DGS Types citation form, and the forms are concatenated:
 
-# Install dependencies using pip (defined in pyproject.toml)
-pip install .
-```
-
-### 2. Dataset Download and Preparation
-
-We use the DGS Corpus (sentence-level pose data) and DGS Types Dictionary for gloss-level replacement.
-
-```bash
-python fluent_pose_synthesis/data/create_data.py \
-  --corpus_dir pose_data/tfds_dgs \
-  --dictionary_dir pose_data/tfds_dgs \
-  --output_dir pose_data/output
-```
-
-This will create a structure like:
-
-```
-pose_data/
-├── tfds_dgs/             # tfds cache
-└── output/
-    ├── train/
-    │   ├── train_1_original.pose
-    │   ├── train_1_updated.pose
-    │   ├── train_1_metadata.json
-    ├── validation/
-    └── test/
-```
-
-
-### 3. Debug Model Training
-
-To quickly test if everything works:
-
-```bash
-python -m fluent_pose_synthesis.train \
-  --name debug \
-  --data assets/sample_dataset \
-  --save save/debug_run
-```
-
-This will:
-- Load only 16 training examples
-- Use batch size = 16
-- Train for 100 epochs
-- Save logs and checkpoints under `save/debug_run`
-
-
-
-## Explanation
-
-Somehow, a pose sequence was generated form sign language videos.
-
-For example, here is a video of a sign language sentence:
-
-[<img src='assets/example/sentence.gif' alt="We were expecting something simple, like a youth hostel.">](https://www.sign-lang.uni-hamburg.de/meinedgs/html/1248862_en.html#t00012332)
-
-Given a system that
-given `We were expecting something simple, like a youth hostel.`
-Translated to the glosses `DIFFERENT1 IMAGINATION1A LIKE3B* EASY1 YOUNG1* HOME1A`.
-Then, using [spoken-to-signed-translation](https://github.com/ZurichNLP/spoken-to-signed-translation),
-videos were found for each gloss, and then put together.
-Or using [Ham2Pose](https://rotem-shalev.github.io/ham-to-pose/), each HamNoSys was animated to a pose sequence.
-
-| Gloss      | HamNoSys                                                                                   | Video                                                                                                                                                           |
-|------------|--------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| DIFFERENT1^ |                                                                              | [<img src='assets/example/DIFFERENT1^.gif' alt="DIFFERENT1^" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13673_en.html)              |
-| IMAGINATION1A^ |                                                                                | [<img src='assets/example/IMAGINATION1A^.gif' alt="IMAGINATION1A^" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13839_en.html)        |
-| LIKE3B*    |                                                          | [<img src='assets/example/LIKE3B*.gif' alt="LIKE3B*" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type82561_en.html)                      |
-| EASY1      |                                                                        | [<img src='assets/example/EASY1.gif' alt="EASY1" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13082_en.html)                          |
-| YOUNG1*    |                                                                        | [<img src='assets/example/YOUNG1*.gif' alt="YOUNG1*" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13872_en.html)                      |
-| HOME1A     |                                                                          | [<img src='assets/example/HOUSE1A^.gif' alt="HOUSE1A^" width='150'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13958_en.html)                    |
-
+| Gloss | Isolated citation form |
+|---|---|
+| DIFFERENT1^ | [<img src='assets/example/DIFFERENT1^.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13673_en.html) |
+| IMAGINATION1A^ | [<img src='assets/example/IMAGINATION1A^.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13839_en.html) |
+| LIKE3B* | [<img src='assets/example/LIKE3B*.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type82561_en.html) |
+| EASY1 | [<img src='assets/example/EASY1.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13082_en.html) |
+| YOUNG1* | [<img src='assets/example/YOUNG1*.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13872_en.html) |
+| HOME1A | [<img src='assets/example/HOUSE1A^.gif' width='120'>](https://www.sign-lang.uni-hamburg.de/meinedgs/types/type13958_en.html) |
 
 <table>
   <tr>
-    <th width="50%">When performed in this way, the pose sequence is not fluent</th>
-    <th width="50%">This project aims to make the pose sequence more natural</th>
+    <th width="33%">1. Naive stitch (spoken-to-signed)<br/><sub>where we started — 565 frames</sub></th>
+    <th width="33%">2. Our stitch (<code>fluent</code> preset)<br/><sub>current approach — 199 frames</sub></th>
+    <th width="33%">3. Real signing (target)<br/><sub>the actual reference — 125 frames</sub></th>
   </tr>
   <tr>
-    <td><img src='assets/example/poses/stitched.gif' alt="Stitched Pose Sequence" style="width:100%;"></td>
-    <td><img src='assets/example/pose.gif' alt="Reference Pose Sequence" style="width:100%;"></td>
+    <td><img src='assets/example/poses/naive.gif' style="width:100%;"></td>
+    <td><img src='assets/example/poses/fluent.gif' style="width:100%;"></td>
+    <td><img src='assets/example/poses/reference.gif' style="width:100%;"></td>
   </tr>
 </table>
 
-### Abstract
+The naive concatenation of isolated citation forms (left) is slow and stilted.
+Our `fluent` stitch (middle) trims the citation holds, de-jitters the motion, and
+compresses toward natural length — measurably closer to the real signing (right)
+in duration, smoothness, hand position, and SignCLIP embedding. The remaining gap
+(true coarticulation) is what a learned model would close.
 
-Generated sign language videos have the potential to revolutionize the way deaf individuals interact with the world, but
-they also present a new set of challenges, including the difficulty of post-editing these videos. In this paper, we
-present an innovative idea for post-editing generated sign language videos. Our approach consists of three main steps:
-recording a corrected video, processing the original and corrected videos using a neural model, and diffusing the new
-sequence to create a more fluent video. We use the MeineDGS corpus as our dataset and sign-spotting to detect signs in
-existing videos. Our experiments show promising results, and we believe that this approach has the potential to be
-successful in post-editing generated sign language videos.
+All three are rendered through the same [`stitching/visualize.py`](fluent_pose_synthesis/stitching/visualize.py).
+Every source sign is **anonymized to one canonical signer** (pose-anonymization,
+applied *per sign* — a single post-stitch pass does not unify signers), so all
+tiles show one consistent body. The `fluent` stitch also **removes each sign's
+idle hand** (a one-handed sign's resting hand is dropped and interpolated from
+its neighbours) instead of freezing a hand off to the side — compare the naive
+tile, where resting hands snap in and out.
 
-### Introduction
+## What we found
 
-Sign languages are an important means of communication for deaf communities, and recent advances in Sign Language
-Translation and Avatar Technology have made it possible to generate sign language videos using avatars or realistic
-humans. However, these generated videos are not easily editable and may contain errors that need correction. In this
-paper, we present an innovative idea for post-editing generated sign language videos.
+Measured over random DGS Corpus samples (details and per-config tables in
+[`docs/FINDINGS.md`](docs/FINDINGS.md)):
 
-Our idea relies on the fact that videos are generated as pose sequences and then animated using either an avatar or a
-realistic human via Generative Adversarial Networks (GANs) or diffusion. When a sign is detected to be incorrect or a
-phrase needs to be edited, a new video can be recorded of the corrected version. The original video, along with the new
-corrected video, is then processed by a neural model that stretches and compresses the new video to match the timing of
-the original sequence. Finally, the model uses diffusion to create a more fluent video, without changing the content of
-the signing.
+- **Isolated citation forms are ~12–15× longer than the same sign in fluent
+  context** (median 116 vs. 10 frames), yet move at nearly the same per-frame
+  speed. The gap is duration/holds, not velocity.
+- The **spoken-to-signed baseline output is ~2.6× too long**, even after its
+  hand-raise trimming — this over-length is its dominant unnaturalness.
+- **pose-evaluation's DTWp is length-biased** (cumulative path distance → lower
+  for shorter clips), so we also report a path-length-normalized `dtwp_norm`
+  (shape) and `len_ratio` (timing) separately.
+- Improving the stitch is a **Pareto trade-off between timing and shape**:
 
-To train this system, we propose using sign-spotting to detect signs in existing videos, then use a dictionary form of
-these signs to train the system to diffuse from the original video plus the dictionary form to a fluent video. One
-dataset that could be used for this purpose is the MeineDGS corpus, which contains all sentences fully glossed and a
-dictionary (DGS Types) that includes many signs in their dictionary form.
+  | config | shape (`dtwp_norm`, ↓) | length ratio (→1.0) |
+  |---|---|---|
+  | baseline (spoken-to-signed) | **0.54** | 2.60 |
+  | + segmentation trim, no padding (`seg_pad00`) | 0.79 | 1.54 |
+  | + per-sign duration cap 25 (`cap_25`) | 0.97 | 1.08 |
+  | + resample to 20 frames/sign (`fps_20`) | 0.99 | 1.03 |
 
-In this paper, we present the details of our proposed idea and discuss the potential challenges and limitations.
-Although we do not yet have results, we believe that this approach has the potential to be successful in post-editing
-generated sign language videos.
+  **Segmentation-model trimming** ([sign/segmentation](https://github.com/sign/segmentation))
+  removes citation-form holds far better than the hand-raise heuristic and gives
+  the best "natural but faithful" point. Reaching true fluent length needs
+  compression that distorts shape — **that residual gap is what a learned model
+  is for.** (Results reproduce on a held-out sample.)
 
-### Background
+A second study (100+ configurations, [`docs/FINDINGS.md`](docs/FINDINGS.md) Part 2)
+diagnosed *where* the DTWp error lives and tried to move it directly, drawing on
+[Sign Stitching (Walsh et al., BMVC 2024)](https://arxiv.org/abs/2405.07663):
 
-Sign languages are an essential part of deaf culture and play a crucial role in communication for deaf individuals. With
-the development of Sign Language Translation and Avatar Technology, it is now possible to generate sign language videos
-using avatars or realistic humans. These generated videos have the potential to revolutionize the way deaf individuals
-interact with the world, but they also present a new set of challenges. One of these challenges is the difficulty of
-post-editing generated sign language videos, since they are not easily editable.
+- **~half of raw DTWp is a metric artifact** — undetected reference keypoints are
+  filled with 10.0, spiking the distance; hand *position* (not handshape)
+  dominates the rest, and depth (z) is uninformative.
+- **DTWp shape has a hard floor** at the segmentation-trim config: no stitching
+  geometry (velocity-matched transitions, co-articulation / hand-detach,
+  resampling, position alignment) beat it by more than ~0.4 %. The
+  citation-vs-fluent gap is not closable by concatenation — it needs the model.
+- **Butterworth low-pass filtering** removes seam jitter at **zero** DTWp cost.
 
-The problem of post-editing generated videos is not limited to sign languages, as it is also a challenge for spoken
-languages. In the field of spoken language post-editing, there have been several works that address the issue of editing
-generated text. One approach is to use machine translation models that are fine-tuned on a specific domain or task to
-improve the fluency and accuracy of the generated text. Another approach is to use an encoder-decoder architecture that
-can generate new text based on an input sequence, while preserving the content and meaning of the original text.
+A third study ([`docs/FINDINGS.md`](docs/FINDINGS.md) Part 3) dropped DTWp as the
+target and optimized **distribution closeness** and a **SignCLIP embedding
+distance** instead — and got a real, held-out-validated improvement. The
+**recommended `fluent` preset** (anonymize to one signer + segmentation trim +
+6 Hz low-pass + duration cap) beats the spoken-to-signed baseline on:
 
-However, these approaches are not directly applicable to sign language videos, which require a different approach.
-Unlike spoken language, sign languages are visual and gestural, and therefore, post-editing generated sign language
-videos requires a different set of techniques. In this paper, we present an innovative idea for post-editing generated
-sign language videos, which takes into account the unique challenges and requirements of sign languages.
+| metric (held-out seed 1) | baseline | `fluent` |
+|---|---|---|
+| SignCLIP embedding distance ↓ (semantic closeness) | 0.283 | **0.273** |
+| jerk / jitter ↓ | 0.0079 | **0.0041** |
+| hand y-position distance ↓ | 0.326 | **0.308** |
+| length ratio (→1.0) | 2.51 | **0.99** |
 
-### Method
+- **Segmentation trimming** makes the stitch *semantically* closer (SignCLIP),
+  not just shorter.
+- **Butterworth (~6 Hz)** cuts jitter ~4–5× with no embedding cost.
+- **Co-articulation / hand-detach hurts** — pulling signs together moves them out
+  of their meaningful signing-space locations (embedding distance rises).
+- The remaining gap is the citation-vs-fluent coarticulation problem — the model's job.
 
-In this section, we describe our proposed method for post-editing generated sign language videos. Our method consists of
-three main steps: recording a corrected video, processing the original and corrected videos using a neural model, and
-diffusing the new sequence to create a more fluent video.
+## Install
 
-1. **Recording a Corrected Video.**
-   When a sign is detected to be incorrect or a phrase needs to be edited in a generated sign language video, a new
-   video can be recorded of the corrected version. The new video should only include the corrected portion, and the
-   signing should be as fluent as possible.
-2. **Processing the Original and Corrected Videos.**
-   The original video, along with the new corrected video, is then processed by a neural model that stretches and
-   compresses the new video to match the timing of the original sequence. The model should be trained to perform this
-   task, which can be done by using a large dataset of sign language videos.
-3. **Diffusing the New Sequence.**
-   Finally, the model uses diffusion to create a more fluent video, without changing the content of the signing. This
-   step is crucial, as it ensures that the corrected video is integrated smoothly into the original video, resulting in
-   a more natural-looking sign language video.
+```bash
+git clone https://github.com/sign-language-processing/fluent-pose-synthesis.git
+cd fluent-pose-synthesis
 
-To train the neural model, we propose using sign-spotting to detect signs in existing videos, then use a dictionary form
-of these signs to train the system to diffuse from the original video plus the dictionary form to a fluent video. One
-dataset that could be used for this purpose is the MeineDGS corpus, which contains all sentences fully glossed and a
-dictionary (DGS Types) that includes many signs in their dictionary form.
+pip install -e .                       # core stitching (pose-format, numpy, scipy)
+pip install -e ".[data,eval]"          # + DGS loaders and DTWp/length metrics
+pip install -e ".[data,eval,segmentation]"   # + segmentation-based trimming
+```
 
-### Experiments
+## Usage
 
-In this section, we describe the experimental setup for training our proposed system for post-editing generated sign
-language videos.
+### Stitch a gloss sequence
 
-#### Dataset
+Isolated DGS-Types forms are downloaded and pose-extracted (MediaPipe holistic)
+on first use and cached.
 
-We use the MeineDGS corpus as our dataset, which contains all sentences fully glossed and a dictionary (DGS Types) that
-includes many signs in their dictionary form. For every sentence in the corpus, we sample 1 to all signs in the sentence
-and replace them with a dictionary form. This results in a new sequence that can be used as input for our neural model.
+```bash
+fluent-stitch stitch --glosses HAUS1A WISSEN2B FUSSBALL2 --out stitched.pose  # uses the `fluent` preset
+# or pass your own .pose files instead of gloss names
+fluent-stitch stitch --glosses a.pose b.pose c.pose --out stitched.pose --config seg_pad00
+```
 
-#### Neural Model
+```python
+from pose_format import Pose
+from fluent_pose_synthesis import concatenate_poses, StitchConfig
 
-Our neural model is a deep learning-based system that takes as input the original video sequence and the corrected
-sequence (in dictionary form), and outputs a more fluent video. The model is trained using the MeineDGS corpus and the
-sign-spotting data to minimize the difference between the output video and the original video.
+poses = [Pose.read(open(p, "rb").read()) for p in ("a.pose", "b.pose", "c.pose")]
+stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", padding=0.0))
+```
 
-#### Evaluation
+`StitchConfig` (defaults reproduce the spoken-to-signed baseline exactly):
 
-To evaluate the performance of our proposed system, we use subjective and objective metrics. Subjective metrics include
-human judgment of the fluency and naturalness of the output video, while objective metrics include metrics such as sign
-recognition accuracy and video quality.
+| field | default | effect |
+|---|---|---|
+| `reduce_holistic`, `normalize` | `True` | pre-processing |
+| `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) *per source sign*, before stitching |
+| `hide_hands_arm_down` | `False` | hide a hand only on frames where its arm hangs down (resting); everywhere else it is interpolated like the naive stitch — so a hand disappears only at rest, never mid-sign |
+| `hand_min_show` | `0` | also hide hand appearances shorter than this many frames — kills a resting arm that briefly creeps above the hide threshold (a blip) |
+| `rest_envelope` | `False` | raise the hands from a rest pose before the first sign and lower them after the last (natural rest→sign→rest; costs distribution metrics by design) |
+| `trim`, `trim_method` | `True`, `"hand_raise"` | per-sign lead-in/out trim; `"segmentation"` uses the model, falls back to `hand_raise` |
+| `padding` | `0.20` | seconds of interpolated transition between signs |
+| `speed` | `1.0` | uniform tempo compression (>1 = shorter) |
+| `frames_per_sign` | `None` | resample every sign to a fixed length |
+| `max_sign_frames` | `None` | compress **only** signs longer than this |
+| `transition` | `"pad"` | inter-sign bridge: `"pad"` \| `"velocity"` \| `"direct"` |
+| `butter`, `butter_cutoff` | `False`, `6.0` | Butterworth low-pass (Hz) — de-jitter |
+| `coarticulate` | `0.0` | pull signs together to cut inter-sign travel (0–1) |
+| `hand_shift` | `None` | `(dx,dy,dz)` distribution-alignment shift of hands |
+| `connection_search`, `savgol` | `True` | closest-frame join, temporal smoothing |
+
+Named presets live in `experiments.CONFIGS`; `fluent` (anonymize + segmentation
+trim + 6 Hz low-pass + duration cap) is the recommended default, `fluent_long`
+keeps the citation length.
+
+### Evaluate against the DGS Corpus
+
+Requires the DGS data mounts (see [`config.py`](fluent_pose_synthesis/stitching/config.py);
+override with `SIGN_RAW_DATA`, `SIGN_TRANSFORMED_VIDEOS`).
+
+```bash
+fluent-stitch analyze  --n 40                 # corpus vs. isolated-form statistics
+fluent-stitch evaluate --n 40 --config all    # A/B every config vs. baseline
+```
+
+Metrics: DTWp (pose-evaluation), mask-aware kinematic **distribution** distances
+(velocity/acceleration/jerk/position Wasserstein, hold-fraction), and — when the
+SignCLIP service is running — a **semantic embedding distance**:
+
+```bash
+# build once (native arm64; downloads the checkpoint + exports ONNX)
+git clone https://github.com/sign/sign-language-assessment.git
+docker build -t sign-clip sign-language-assessment/sign_clip
+docker run -d -p 8080:8080 -e PORT=8080 sign-clip     # POST /api/embed/pose -> 768-dim
+```
+
+The iteration driver (`iterate.py`) then reports per-sentence embedding cosine
+distance and a Fréchet Pose Distance alongside the kinematic metrics. Stitch with
+`reduce_holistic=False` so the pose stays full-holistic (embeddable); hand-based
+metrics are unaffected.
+
+## Architecture
+
+```
+fluent_pose_synthesis/stitching/
+├── config.py        # data-mount paths (env-overridable) + constants
+├── pose_lookup.py   # md5(video)→/mnt pose; MediaPipe holistic extraction + cache
+├── dgs_corpus.py    # EAF (pympi) → sentences/glosses; slice fluent reference poses
+├── dgs_types.py     # gloss → isolated citation pose (download + extract + cache)
+├── trim.py          # per-sign trimming: hand-raise heuristic | segmentation model
+├── concatenate.py   # config-driven stitching (baseline-faithful + toggles)
+├── metrics.py       # DTWp/matched/clean + mask-aware velocity/accel/jerk/position distributions
+├── signclip.py      # SignCLIP embedding client + cosine / Fréchet Pose Distance
+├── visualize.py     # render poses to GIF (anonymized, consistent framing)
+├── harness.py       # sample sentences → reconstruct → score
+├── experiments.py   # named configs (incl. `fluent`), A/B sweep, TSV/JSON logging
+├── analysis.py      # corpus vs. reconstruction characteristics
+├── diagnostics.py   # where the DTWp error comes from (masking, position, ...)
+├── iterate.py       # hypothesis-driven iteration driver (results.tsv, +embeddings)
+├── analyze_results.py  # multi-objective ranking of an iteration run
+├── warm_cache.py    # parallel pre-extraction of an eval set's poses
+└── cli.py           # `fluent-stitch` entry point
+```
+
+Evaluation uses [pose-evaluation](https://github.com/sign-language-processing/pose-evaluation)
+(DTWp) and, optionally, [sign/segmentation](https://github.com/sign/segmentation)
+and [pose-anonymization](https://github.com/sign-language-processing/pose-anonymization).
+
+## Citation
+
+```bib
+@misc{moryossef2023fluent,
+    title={Fluent Sign Language Pose Synthesis},
+    author={Amit Moryossef},
+    howpublished={\url{https://github.com/sign-language-processing/fluent-pose-synthesis}},
+    year={2023}
+}
+```

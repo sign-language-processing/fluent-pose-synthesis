@@ -1,0 +1,10 @@
+
+=== SUMMARY (ranked by dtwp_norm; shape-fair, length-unbiased) ===
+config            dtwp_norm      Δ%  dtwp_raw  len_ratio  len_absΔ
+baseline              0.560    +0.0     57.21       2.50     208.1
+pad_0.00              0.627   +12.1     54.90       2.14     159.2
+seg_trim              0.680   +21.5     54.81       1.88     123.5
+seg_pad00             0.779   +39.1     52.06       1.53      83.8
+cap_30                0.819   +46.3     55.11       1.22      56.0
+cap_25                0.861   +53.9     54.20       1.08      49.7
+fps_20                0.889   +58.9     53.36       1.04      45.3

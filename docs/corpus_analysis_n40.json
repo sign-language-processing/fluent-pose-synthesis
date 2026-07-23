@@ -1,0 +1,74 @@
+{
+  "eval_set": {
+    "n_sentences": 40,
+    "seed": 0
+  },
+  "sentence_duration_ms": {
+    "n": 40,
+    "mean": 3426.5,
+    "median": 3080.0,
+    "p10": 1418.0,
+    "p90": 5852.0
+  },
+  "lexical_glosses_per_sentence": {
+    "n": 40,
+    "mean": 5.525,
+    "median": 5.0,
+    "p10": 3.0,
+    "p90": 9.0
+  },
+  "fluent_sign_duration_ms": {
+    "n": 189,
+    "mean": 256.825,
+    "median": 200.0,
+    "p10": 80.0,
+    "p90": 540.0
+  },
+  "fluent_sign_frames": {
+    "n": 189,
+    "mean": 12.841,
+    "median": 10.0,
+    "p10": 4.0,
+    "p90": 27.0
+  },
+  "isolated_sign_frames": {
+    "n": 189,
+    "mean": 114.016,
+    "median": 116.0,
+    "p10": 87.2,
+    "p90": 139.0
+  },
+  "isolated_over_fluent_frame_ratio": {
+    "n": 189,
+    "mean": 14.696,
+    "median": 11.7,
+    "p10": 4.523,
+    "p90": 28.05
+  },
+  "inter_sign_gap_ms": {
+    "n": 229,
+    "mean": 216.594,
+    "median": 180.0,
+    "p10": 80.0,
+    "p90": 380.0
+  },
+  "adjacent_sign_overlap_ms (co-articulation)": {},
+  "fluent_hand_speed_norm_per_frame": {
+    "n": 188,
+    "mean": 0.023,
+    "median": 0.021,
+    "p10": 0.01,
+    "p90": 0.036
+  },
+  "isolated_hand_speed_norm_per_frame": {
+    "n": 189,
+    "mean": 0.021,
+    "median": 0.02,
+    "p10": 0.013,
+    "p90": 0.029
+  },
+  "counts": {
+    "overlapping_adjacent_pairs": 0,
+    "gapped_adjacent_pairs": 229
+  }
+}

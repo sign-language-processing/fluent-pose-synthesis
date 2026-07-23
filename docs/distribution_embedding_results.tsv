@@ -1,0 +1,15 @@
+label	hypothesis	vel_w	acc_w	jerk_w	posy_w	still_frac_err	emb_cos	emb_fpd	dtwp_matched	length_ratio
+baseline	spoken-to-signed baseline	0.0137	0.0060	0.0071	0.3597	0.2064	0.2808	6.5817	47.7138	2.5633
+seg	segmentation trim anchor	0.0248	0.0122	0.0194	0.3697	0.2568	0.2690	6.7250	46.7108	1.4118
+butter4	H: LP 4Hz de-jitter; keep content?	0.0158	0.0039	0.0051	0.3656	0.1465	0.2724	6.9337	50.5051	1.4118
+butter5	H: LP 5Hz de-jitter; keep content?	0.0177	0.0043	0.0044	0.3668	0.1605	0.2709	6.8752	48.3452	1.4118
+butter6	H: LP 6Hz de-jitter; keep content?	0.0190	0.0049	0.0042	0.3676	0.1638	0.2701	6.8192	48.1775	1.4118
+butter7	H: LP 7Hz de-jitter; keep content?	0.0202	0.0060	0.0044	0.3682	0.1785	0.2698	6.7742	47.6791	1.4118
+butter8	H: LP 8Hz de-jitter; keep content?	0.0210	0.0069	0.0054	0.3685	0.1783	0.2694	6.7454	46.7237	1.4118
+butter10	H: LP 10Hz de-jitter; keep content?	0.0223	0.0091	0.0064	0.3690	0.2044	0.2688	6.7164	46.7251	1.4118
+b6_cap34	H: LP6 + cap34 -> natural length + smooth	0.0331	0.0097	0.0051	0.3354	0.0943	0.2675	7.1360	52.7303	0.8374
+b6_cap40	H: LP6 + cap40 -> natural length + smooth	0.0286	0.0079	0.0041	0.3421	0.1010	0.2683	7.0342	52.7966	0.9544
+b6_cap46	H: LP6 + cap46 -> natural length + smooth	0.0263	0.0069	0.0040	0.3448	0.1080	0.2723	7.0273	52.7467	1.0333
+coart0.3_b6	H: coart 0.3 + LP6	0.0178	0.0048	0.0044	0.3645	0.1733	0.2895	7.2513	49.0138	1.4078
+coart0.5_b6	H: coart 0.5 + LP6	0.0173	0.0048	0.0046	0.3698	0.1756	0.3003	7.7482	49.2670	1.4078
+b6_cap40_coart0.3	H: LP6 + cap40 + coart0.3 (natural, smooth, connected)	0.0264	0.0073	0.0041	0.3391	0.1103	0.2818	7.4348	53.4088	0.9479

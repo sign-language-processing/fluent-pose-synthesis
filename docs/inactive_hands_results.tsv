@@ -1,0 +1,6 @@
+label	hypothesis	vel_w	acc_w	jerk_w	posy_w	still_frac_err	emb_cos	emb_fpd	dtwp_matched	length_ratio
+fluent	current fluent (no hand drop)	0.0289	0.0078	0.0040	0.3575	0.0887	0.2751	6.2643	50.3417	0.9719
+fluent_drop	H: + drop inactive hands	0.0181	0.0048	0.0036	0.3519	0.1740	0.2819	7.0282	83.7612	0.9461
+fluent_drop_pad05	H: drop + 0.05s smooth transition	0.0170	0.0043	0.0037	0.3508	0.1892	0.2786	6.9273	83.2562	1.0202
+fluent_drop_pad10	H: drop + 0.10s smooth transition	0.0153	0.0041	0.0043	0.3499	0.2099	0.2770	7.0405	84.8511	1.1315
+fluent_drop_active0.2	H: drop, lower active threshold 0.2	0.0185	0.0051	0.0034	0.3326	0.1240	0.2789	6.8905	75.9650	0.9554

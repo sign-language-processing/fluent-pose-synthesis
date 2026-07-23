@@ -1,50 +1,68 @@
 [project]
 name = "fluent-pose-synthesis"
-description = "This project aims to make unfluent sign language poses fluent"
-version = "0.0.1"
+description = "Improved concatenative stitching of sign-language poses, evaluated against the DGS Corpus"
+version = "0.1.0"
 authors = [
     { name = "Amit Moryossef", email = "amitmoryossef@gmail.com" },
 ]
 readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy==1.24.4",
     "pose-format",
-    "tensorflow-datasets==4.9.7",
-    "sign-language-datasets",
-    "spoken-to-signed @ git+https://github.com/sign-language-processing/spoken-to-signed-translation",
-    "CAMDM @ git+https://github.com/AmitMY/CAMDM",
-    "torch",
-    "matplotlib",
-    "blobfile",
-    "torch_ema"
+    "numpy",
+    "scipy",
 ]
 
 [project.optional-dependencies]
+# Loading DGS Corpus (EAF + poses) and DGS Types (download + MediaPipe extraction).
+data = [
+    "pympi-ling",
+    "opencv-python",
+    "mediapipe",
+]
+# Evaluation metrics: DTWp + length + mask-aware distribution metrics + SignCLIP
+# embedding distance (needs the sign-clip container running; see README).
+eval = [
+    "pose-evaluation @ git+https://github.com/sign-language-processing/pose-evaluation",
+    "dtaidistance",
+    "fastdtw",
+    "scipy",
+    "requests",
+    "tqdm",
+]
+# Segmentation-based trimming (sign-language-segmentation model).
+segmentation = [
+    "sign_language_segmentation @ git+https://github.com/sign/segmentation",
+    "pose-anonymization @ git+https://github.com/sign-language-processing/pose-anonymization",
+    "safetensors",
+    "numba",
+    "pytorch_lightning",
+    "scikit-learn",
+]
+# Rendering poses to GIF/MP4 (needs ffmpeg on PATH).
+viz = [
+    "vidgear",
+    "opencv-python",
+    "pose-anonymization @ git+https://github.com/sign-language-processing/pose-anonymization",
+]
 dev = [
     "pytest",
-    "pylint"
+    "ruff",
 ]
 
-[tool.yapf]
-based_on_style = "google"
-column_limit = 120
-
-[tool.pylint]
-max-line-length = 120
-disable = [
-    "C0114", # Missing module docstring
-    "C0115", # Missing class docstring
-    "C0116", # Missing function or method docstring
-]
+[project.scripts]
+fluent-stitch = "fluent_pose_synthesis.stitching.cli:main"
 
 [tool.setuptools]
-packages = [
-    "fluent_pose_synthesis"
-]
+packages = ["fluent_pose_synthesis", "fluent_pose_synthesis.stitching"]
+
+[tool.setuptools.package-data]
+"fluent_pose_synthesis.stitching" = ["assets/*.pose"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
 
 [tool.pytest.ini_options]
 addopts = "-v"
-testpaths = ["fluent_pose_synthesis"]
-
-[project.scripts]
-fluent_pose_synthesis = "fluent_pose_synthesis.bin:main"
+testpaths = ["fluent_pose_synthesis/tests"]
