@@ -56,13 +56,13 @@ CONFIGS: dict[str, StitchConfig] = {
     # beat the spoken-to-signed baseline on SignCLIP embedding distance, jerk
     # (smoothness), length, and hand position — including in a body-shape-matched
     # (both-sides-anonymized) evaluation. reduce_holistic=False keeps it full/embeddable.
-    "fluent": StitchConfig(anonymize=True, hide_hands_arm_down=True, rest_envelope=True,
-                           trim_method="segmentation", padding=0.05, reduce_holistic=False,
-                           butter=True, butter_cutoff=6.0, max_sign_frames=40),
+    "fluent": StitchConfig(anonymize=True, hide_hands_arm_down=True, hand_min_show=10,
+                           rest_envelope=True, trim_method="segmentation", padding=0.05,
+                           reduce_holistic=False, butter=True, butter_cutoff=6.0, max_sign_frames=40),
     # Keep the citation length (~1.5x) but still de-jittered and semantically closer.
-    "fluent_long": StitchConfig(anonymize=True, hide_hands_arm_down=True, rest_envelope=True,
-                                trim_method="segmentation", padding=0.05, reduce_holistic=False,
-                                butter=True, butter_cutoff=7.0),
+    "fluent_long": StitchConfig(anonymize=True, hide_hands_arm_down=True, hand_min_show=10,
+                                rest_envelope=True, trim_method="segmentation", padding=0.05,
+                                reduce_holistic=False, butter=True, butter_cutoff=7.0),
 }
 
 

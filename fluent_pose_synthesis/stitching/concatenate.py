@@ -83,6 +83,7 @@ class StitchConfig:
     # matches real signing — a hand is absent only when the arm is at rest.
     hide_hands_arm_down: bool = False
     arm_down_height: float = 0.15   # hide when wrist rel-height < this (1=shoulder, 0=hip)
+    hand_min_show: int = 0          # also hide hand appearances shorter than this many frames (blips)
 
     # (legacy, off by default) drop a whole idle hand per sign — superseded by
     # hide_hands_arm_down, which the naive-style interpolation makes unnecessary.
@@ -558,7 +559,7 @@ def _anonymize(pose: Pose) -> Pose:
     return remove_appearance(pose)
 
 
-def _hide_hands_when_arm_down(pose: Pose, threshold: float) -> Pose:
+def _hide_hands_when_arm_down(pose: Pose, threshold: float, min_show: int = 0) -> Pose:
     """Mask a hand's keypoints on frames where its arm hangs down (wrist below
     ``threshold`` of the way from hip to shoulder). The hand follows the real arm
     (from the source clips) everywhere else — so it only disappears at rest."""
@@ -583,6 +584,21 @@ def _hide_hands_when_arm_down(pose: Pose, threshold: float) -> Pose:
             continue
         rel = (data[:, 0, hi, 1] - data[:, 0, wr, 1]) / abs(torso)  # 1 shoulder, 0 hip
         down = rel < threshold
+        if min_show > 0:
+            # also hide brief hand appearances (blips): a short shown span between
+            # arm-down frames is a resting arm that momentarily crept up.
+            shown = ~down
+            i, m = 0, len(shown)
+            while i < m:
+                if shown[i]:
+                    j = i
+                    while j < m and shown[j]:
+                        j += 1
+                    if j - i < min_show:
+                        down[i:j] = True
+                    i = j
+                else:
+                    i += 1
         for k in comp_idx[comp]:
             conf[down, 0, k] = 0.0
             mask[down, 0, k, :] = True
@@ -684,5 +700,5 @@ def concatenate_poses(poses: list[Pose], config: StitchConfig = BASELINE) -> Pos
     if config.rest_envelope:
         pose = _rest_envelope(pose, config)
     if config.hide_hands_arm_down:
-        pose = _hide_hands_when_arm_down(pose, config.arm_down_height)
+        pose = _hide_hands_when_arm_down(pose, config.arm_down_height, config.hand_min_show)
     return pose

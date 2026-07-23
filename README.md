@@ -161,6 +161,7 @@ stitched = concatenate_poses(poses, StitchConfig(trim_method="segmentation", pad
 | `reduce_holistic`, `normalize` | `True` | pre-processing |
 | `anonymize` | `False` | map every sign to one canonical signer (pose-anonymization) *per source sign*, before stitching |
 | `hide_hands_arm_down` | `False` | hide a hand only on frames where its arm hangs down (resting); everywhere else it is interpolated like the naive stitch — so a hand disappears only at rest, never mid-sign |
+| `hand_min_show` | `0` | also hide hand appearances shorter than this many frames — kills a resting arm that briefly creeps above the hide threshold (a blip) |
 | `rest_envelope` | `False` | raise the hands from a rest pose before the first sign and lower them after the last (natural rest→sign→rest; costs distribution metrics by design) |
 | `trim`, `trim_method` | `True`, `"hand_raise"` | per-sign lead-in/out trim; `"segmentation"` uses the model, falls back to `hand_raise` |
 | `padding` | `0.20` | seconds of interpolated transition between signs |
